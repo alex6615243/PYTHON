@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 import os
 
 # ==========================================
@@ -48,21 +47,16 @@ if st.sidebar.button("➕ 新增區域"):
         pd.DataFrame(st.session_state.regions, columns=['區域名稱']).to_csv(REGION_FILE, index=False)
         st.sidebar.success(f"已新增：{new_region_name}")
 
-# 使用 Data Editor 讓使用者可以直接改名
 st.sidebar.write("編輯區域名稱 (直接在下方表格修改)：")
-# 建立一個暫時的 DataFrame 供編輯
 region_df = pd.DataFrame(st.session_state.regions, columns=['區域名稱'])
 edited_region_df = st.sidebar.data_editor(region_df, num_rows="dynamic", use_container_width=True)
 
-# 邏輯：如果區域名稱發生變動，同步更新 tasks 裡的區域標籤
 if not edited_region_df.equals(region_df):
     old_regions = region_df['區域名稱'].tolist()
     new_regions = edited_region_df['區域名稱'].tolist()
     
-    # 檢查是否有更名動作
     for old, new in zip(old_regions, new_regions):
         if old != new:
-            # 同步更新工作清單中的區域標籤
             st.session_state.tasks.loc[st.session_state.tasks['區域'] == old, '區域'] = new
     
     st.session_state.regions = new_regions
@@ -76,7 +70,6 @@ if not edited_region_df.equals(region_df):
 st.sidebar.divider()
 st.sidebar.header("➕ 新增工作")
 with st.sidebar.form("add_task_form"):
-    # 從區域管理器動態獲取清單
     selected_region = st.selectbox("歸屬區域", st.session_state.regions)
     task_name = st.text_input("項目名稱")
     col1, col2 = st.columns(2)
@@ -88,7 +81,7 @@ with st.sidebar.form("add_task_form"):
         if task_name:
             if is_m: end_d = start_d
             new_row = pd.DataFrame([{
-                '工作項目': f"★ {task_name}" if is_m else task_name,
+                '工作項目': f"{task_name}", # 移除星號前綴，交給繪圖處理
                 '開始時間': pd.to_datetime(start_d),
                 '完成時間': pd.to_datetime(end_d),
                 '區域': selected_region,
@@ -99,41 +92,58 @@ with st.sidebar.form("add_task_form"):
             st.success("已新增")
 
 # ==========================================
-# 主畫面：甘特圖繪製
+# 主畫面：甘特圖繪製 (Plotly 升級版)
 # ==========================================
 st.subheader("📋 工作清單與圖表")
-# 顯示工作清單編輯器
 st.session_state.tasks = st.data_editor(st.session_state.tasks, num_rows="dynamic", use_container_width=True)
 
-if st.button("🌟 生成甘特圖", type="primary"):
+if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
+        # 確保時間格式正確
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
-        df['天數'] = (df['完成時間'] - df['開始時間']).dt.days
         
-        fig, ax = plt.subplots(figsize=(12, len(df)*0.6 + 2))
-        plt.title(f"{project_name} - 進度總表", fontsize=16, fontweight='bold')
-        sns.set_theme(style='whitegrid')
-        sns.set_style({"font.sans-serif":['Microsoft JhengHei', 'PingFang TC', 'Heiti TC']})
+        # 為了讓 Plotly 的長條圖能夠包容最後一天，我們在繪圖專用的 DataFrame 中把完成日 +1 天
+        plot_df = df.copy()
+        plot_df['繪圖結束時間'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
-        # 顏色對映
-        unique_regs = df['區域'].unique()
-        colors = sns.color_palette("husl", len(unique_regs))
-        reg_color_map = dict(zip(unique_regs, colors))
+        # 建立甘特圖底圖 (自動用區域進行顏色分類)
+        fig = px.timeline(
+            plot_df[~plot_df['是否為里程碑']], # 先畫不是里程碑的常規任務
+            x_start="開始時間", 
+            x_end="繪圖結束時間", 
+            y="工作項目", 
+            color="區域",
+            title=f"{project_name} - 進度總表",
+            height=300 + len(df)*30 # 自動根據任務數量調整高度
+        )
+        
+        # 針對里程碑添加星星圖示
+        milestones = plot_df[plot_df['是否為里程碑']]
+        if not milestones.empty:
+            for _, m in milestones.iterrows():
+                fig.add_trace(go.Scatter(
+                    x=[m['開始時間']],
+                    y=[m['工作項目']],
+                    mode='markers+text',
+                    marker=dict(symbol='star', size=20, line=dict(color='black', width=1)),
+                    text=[f"{m['開始時間'].strftime('%m/%d')} (里程碑)"],
+                    textposition='middle right',
+                    showlegend=False,
+                    name=m['區域']
+                ))
 
-        for y, (idx, row) in enumerate(df.iterrows()):
-            c = reg_color_map.get(row['區域'], 'gray')
-            if row['是否為里程碑']:
-                ax.plot([row["開始時間"]], [y], marker='*', markersize=15, color=c, markeredgecolor='black')
-            else:
-                ax.barh(y, row['天數'], left=row["開始時間"], height=0.5, color=c, edgecolor="black", alpha=0.8)
-            
-            # 標註日期文字
-            ax.text(row["開始時間"], y, f" {row['工作項目']}", va='center', ha='left', fontsize=9)
-
-        ax.set_yticks(range(len(df)))
-        ax.set_yticklabels(df['區域'], fontsize=10) # Y 軸顯示區域，清楚區分
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-        ax.invert_yaxis() # 讓最新輸入的在上面
-        st.pyplot(fig)
+        # 反轉 Y 軸讓最新的資料在上面，並優化版面
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(
+            xaxis_title="日期",
+            yaxis_title="工作項目",
+            hovermode="closest",
+            plot_bgcolor="white",
+            xaxis=dict(showgrid=True, gridcolor='lightgray', tickformat="%Y-%m-%d"),
+            yaxis=dict(showgrid=True, gridcolor='lightgray')
+        )
+        
+        # 輸出到 Streamlit 網頁上
+        st.plotly_chart(fig, use_container_width=True)
