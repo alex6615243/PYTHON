@@ -100,9 +100,8 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         # 資料預處理
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
-        df['工作項目'] = df['工作項目'].astype(str) # 強制轉文字，避免數字造成座標錯誤
+        df['工作項目'] = df['工作項目'].astype(str) 
         
-        # 1. 建立核心顏色對照表，確保長條圖與星號共用
         unique_regions = df['區域'].unique()
         color_seq = px.colors.qualitative.Plotly 
         region_color_map = {reg: color_seq[i % len(color_seq)] for i, reg in enumerate(unique_regions)}
@@ -110,9 +109,13 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         plot_df = df.copy()
         plot_df['繪圖結束時間'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
+        # 分離資料
+        normal_tasks = plot_df[~plot_df['是否為里程碑']]
+        milestones = plot_df[plot_df['是否為里程碑']]
+        
         # 2. 畫長條圖
         fig = px.timeline(
-            plot_df[~plot_df['是否為里程碑']], 
+            normal_tasks, 
             x_start="開始時間", 
             x_end="繪圖結束時間", 
             y="工作項目", 
@@ -122,11 +125,22 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             height=300 + len(df)*35
         )
         
+        # 記錄哪些區域已經被長條圖加進圖例了
+        regions_with_bars = set(normal_tasks['區域'].unique())
+        added_star_legends = set() # 確保純星星的區域只加一次圖例
+        
         # 3. 畫里程碑
-        milestones = plot_df[plot_df['是否為里程碑']]
         if not milestones.empty:
             for _, m in milestones.iterrows():
-                m_color = region_color_map.get(m['區域'], "gray")
+                reg = m['區域']
+                m_color = region_color_map.get(reg, "gray")
+                
+                # 💡 核心修正：判斷這顆星星是否需要自己建立圖例
+                # 條件：該區域沒有長條圖 AND 我們還沒幫該區域的其他星星建過圖例
+                needs_legend = (reg not in regions_with_bars) and (reg not in added_star_legends)
+                
+                if needs_legend:
+                    added_star_legends.add(reg)
                 
                 fig.add_trace(go.Scatter(
                     x=[m['開始時間']],
@@ -140,8 +154,9 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                     ),
                     text=[f" {m['開始時間'].strftime('%m/%d')}"],
                     textposition='middle right',
-                    showlegend=False,
-                    legendgroup=m['區域']  # 👈 【關鍵修復】將星號綁定到該區域的圖例群組
+                    showlegend=needs_legend, 
+                    name=reg,                
+                    legendgroup=reg          
                 ))
 
         # 4. 強制 Y 軸為文字分類模式，並反轉排序
