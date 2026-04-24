@@ -165,9 +165,20 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             xaxis_title="日期",
             yaxis_title="工作項目 (點擊右側圖例可過濾區域)",
             hovermode="closest",
-            plot_bgcolor="#f9f9f9",
-            xaxis=dict(showgrid=True, gridcolor='white', tickformat="%m/%d"),
-            yaxis=dict(showgrid=True, gridcolor='white')
+            # --- 背景顏色修改區 ---
+            plot_bgcolor="#d3d3d3",   # 繪圖區背景改為灰色 (LightGrey)
+            paper_bgcolor="#d3d3d3",  # 整個圖表外框背景改為灰色
+            # --------------------
+            xaxis=dict(
+                showgrid=True, 
+                gridcolor='white',    # 網格線改為白色，在灰色背景上更易閱讀
+                tickformat="%m/%d"
+            ),
+            yaxis=dict(
+                showgrid=True, 
+                gridcolor='white'     # 網格線改為白色
+            ),
+            margin=dict(l=20, r=20, t=60, b=20) # 調整邊距讓圖表更緊湊
         )
         
         st.plotly_chart(fig, use_container_width=True)
