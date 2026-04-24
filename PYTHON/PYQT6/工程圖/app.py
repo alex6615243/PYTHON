@@ -86,15 +86,14 @@ with st.sidebar.form("add_task_form"):
             }])
             st.session_state.tasks = pd.concat([st.session_state.tasks, new_row], ignore_index=True)
             st.session_state.tasks.to_csv(SAVE_FILE, index=False)
-            st.success("已新增")
+            st.success("已新增並自動存檔")
 
 # ==========================================
-# 主畫面：甘特圖繪製 (顏色一致版)
+# 主畫面：工作清單 (具備自動存檔)
 # ==========================================
 st.subheader("📋 工作清單與圖表")
 
-# 1. 捕捉編輯後的表格 (edited_df)
-# 加上 key="main_editor" 讓 Streamlit 能夠追蹤狀態
+# 只保留這一個 Data Editor
 edited_df = st.data_editor(
     st.session_state.tasks, 
     num_rows="dynamic", 
@@ -102,22 +101,18 @@ edited_df = st.data_editor(
     key="main_editor"
 )
 
-# 2. 【核心修復】比對新舊資料，若有變動則立即存檔
+# 偵測變動並立即寫入 CSV
 if not edited_df.equals(st.session_state.tasks):
-    # 更新記憶體中的資料
     st.session_state.tasks = edited_df
-    
-    # 強制寫入 CSV 檔案，確保下次開啟時資料還在
     st.session_state.tasks.to_csv(SAVE_FILE, index=False)
-    
-    # 在畫面右下角彈出一個小提示，確認存檔成功
-    st.toast("✅ 偵測到變動，資料已同步至雲端存檔", icon="💾")
-st.session_state.tasks = st.data_editor(st.session_state.tasks, num_rows="dynamic", use_container_width=True)
+    st.toast("✅ 資料已同步至雲端存檔", icon="💾")
 
+# ==========================================
+# 繪圖區
+# ==========================================
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
-        # 資料預處理
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
         df['工作項目'] = df['工作項目'].astype(str) 
@@ -129,11 +124,10 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         plot_df = df.copy()
         plot_df['繪圖結束時間'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
-        # 分離資料
         normal_tasks = plot_df[~plot_df['是否為里程碑']]
         milestones = plot_df[plot_df['是否為里程碑']]
         
-        # 2. 畫長條圖
+        # 畫長條圖
         fig = px.timeline(
             normal_tasks, 
             x_start="開始時間", 
@@ -145,20 +139,15 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             height=300 + len(df)*35
         )
         
-        # 記錄哪些區域已經被長條圖加進圖例了
         regions_with_bars = set(normal_tasks['區域'].unique())
-        added_star_legends = set() # 確保純星星的區域只加一次圖例
+        added_star_legends = set()
         
-        # 3. 畫里程碑
+        # 畫里程碑
         if not milestones.empty:
             for _, m in milestones.iterrows():
                 reg = m['區域']
                 m_color = region_color_map.get(reg, "gray")
-                
-                # 💡 核心修正：判斷這顆星星是否需要自己建立圖例
-                # 條件：該區域沒有長條圖 AND 我們還沒幫該區域的其他星星建過圖例
                 needs_legend = (reg not in regions_with_bars) and (reg not in added_star_legends)
-                
                 if needs_legend:
                     added_star_legends.add(reg)
                 
@@ -167,9 +156,7 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                     y=[m['工作項目']],
                     mode='markers+text',
                     marker=dict(
-                        symbol='star', 
-                        size=22, 
-                        color=m_color, 
+                        symbol='star', size=22, color=m_color, 
                         line=dict(color='black', width=1.5)
                     ),
                     text=[f" {m['開始時間'].strftime('%m/%d')}"],
@@ -179,26 +166,17 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                     legendgroup=reg          
                 ))
 
-        # 4. 強制 Y 軸為文字分類模式，並反轉排序
+        # 圖表樣式設定
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
             xaxis_title="日期",
-            yaxis_title="工作項目 (點擊右側圖例可過濾區域)",
+            yaxis_title="工作項目",
             hovermode="closest",
-            # --- 背景顏色修改區 ---
-            plot_bgcolor="#d3d3d3",   # 繪圖區背景改為灰色 (LightGrey)
-            paper_bgcolor="#d3d3d3",  # 整個圖表外框背景改為灰色
-            # --------------------
-            xaxis=dict(
-                showgrid=True, 
-                gridcolor='white',    # 網格線改為白色，在灰色背景上更易閱讀
-                tickformat="%m/%d"
-            ),
-            yaxis=dict(
-                showgrid=True, 
-                gridcolor='white'     # 網格線改為白色
-            ),
-            margin=dict(l=20, r=20, t=60, b=20) # 調整邊距讓圖表更緊湊
+            plot_bgcolor="#d3d3d3",   # 灰色背景
+            paper_bgcolor="#d3d3d3",  # 灰色背景
+            xaxis=dict(showgrid=True, gridcolor='white', tickformat="%m/%d"),
+            yaxis=dict(showgrid=True, gridcolor='white'),
+            margin=dict(l=20, r=20, t=60, b=20)
         )
         
         st.plotly_chart(fig, use_container_width=True)
