@@ -92,6 +92,26 @@ with st.sidebar.form("add_task_form"):
 # 主畫面：甘特圖繪製 (顏色一致版)
 # ==========================================
 st.subheader("📋 工作清單與圖表")
+
+# 1. 捕捉編輯後的表格 (edited_df)
+# 加上 key="main_editor" 讓 Streamlit 能夠追蹤狀態
+edited_df = st.data_editor(
+    st.session_state.tasks, 
+    num_rows="dynamic", 
+    use_container_width=True,
+    key="main_editor"
+)
+
+# 2. 【核心修復】比對新舊資料，若有變動則立即存檔
+if not edited_df.equals(st.session_state.tasks):
+    # 更新記憶體中的資料
+    st.session_state.tasks = edited_df
+    
+    # 強制寫入 CSV 檔案，確保下次開啟時資料還在
+    st.session_state.tasks.to_csv(SAVE_FILE, index=False)
+    
+    # 在畫面右下角彈出一個小提示，確認存檔成功
+    st.toast("✅ 偵測到變動，資料已同步至雲端存檔", icon="💾")
 st.session_state.tasks = st.data_editor(st.session_state.tasks, num_rows="dynamic", use_container_width=True)
 
 if st.button("🌟 生成互動式甘特圖", type="primary"):
