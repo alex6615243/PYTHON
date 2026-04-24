@@ -1,0 +1,136 @@
+import sys
+from datetime import date, timedelta
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTabWidget, 
+                             QTableWidget, QCheckBox, QLabel, QHeaderView)
+from PyQt6.QtCore import Qt
+
+class AttendanceCalendar(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.start_date = date(2026, 4, 19)
+        self.end_date = date(2026, 7, 28)
+        
+        # 定義 2026 年這段期間的國定假日 (可依需求自行增減)
+        self.holidays = [
+            date(2026, 5, 1),  # 勞動節
+            date(2026, 6, 19), # 端午節 (假設日期)
+        ]
+        
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('活動簽到進度表 - 彩色假日標示版')
+        self.resize(1100, 850)
+        
+        main_layout = QVBoxLayout(self)
+        title = QLabel("活動簽到追蹤 (4/19 - 7/28)")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 28px; font-weight: bold; margin: 15px; color: #333;")
+        main_layout.addWidget(title)
+
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("QTabBar::tab { font-size: 18px; padding: 10px 30px; }")
+        
+        for month in range(4, 8):
+            self.tabs.addTab(self.create_month_calendar(2026, month), f"{month}月")
+            
+        main_layout.addWidget(self.tabs)
+
+    def create_month_calendar(self, year, month):
+        table = QTableWidget(6, 7)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        table.setHorizontalHeaderLabels(['週日', '週一', '週二', '週三', '週四', '週五', '週六'])
+        
+        # 設定表格標題的樣式與顏色
+        table.setStyleSheet("QTableWidget { background-color: #ffffff; border: 1px solid #ddd; }")
+        table.horizontalHeader().setStyleSheet("""
+            QHeaderView::section { 
+                background-color: #f8f9fa; 
+                font-size: 18px; 
+                font-weight: bold; 
+                border: 1px solid #ddd;
+                height: 40px;
+            }
+            /* 單獨設定標題列的週日與週六顏色 */
+            QHeaderView::section:horizontal:at(0) { color: #dc3545; } /* 週日: 紅色 */
+            QHeaderView::section:horizontal:at(6) { color: #007bff; } /* 週六: 藍色 */
+        """)
+
+        first_day = date(year, month, 1)
+        start_col = (first_day.weekday() + 1) % 7 
+        
+        current_date = first_day
+        row, col = 0, start_col
+        
+        while current_date.month == month:
+            cell_widget = QWidget()
+            cell_layout = QVBoxLayout(cell_widget)
+            
+            checkbox = QCheckBox(f"{current_date.day}")
+            checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+
+            # --- 顏色邏輯判斷 ---
+            if col == 0 or current_date in self.holidays:
+                text_color = "#dc3545"  # 星期天或國定假日：紅色
+            elif col == 6:
+                text_color = "#007bff"  # 星期六：藍色
+            else:
+                text_color = "#333333"  # 平日：深灰色
+
+            # --- 動態寫入樣式 (字體顏色 + 大方塊) ---
+            checkbox.setStyleSheet(f"""
+                QCheckBox {{
+                    font-size: 22px;
+                    font-weight: bold;
+                    color: {text_color};
+                    spacing: 10px;
+                }}
+                QCheckBox::indicator {{
+                    width: 45px;
+                    height: 45px;
+                    border-radius: 6px;
+                    border: 2px solid #5c5c5c;
+                    background-color: white;
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: #4CAF50;
+                }}
+                QCheckBox::indicator:disabled {{
+                    background-color: #eeeeee;
+                    border: 2px solid #cccccc;
+                }}
+            """)
+
+            # 判斷是否在活動日期內 (4/19 - 7/28)
+            if self.start_date <= current_date <= self.end_date:
+                checkbox.setEnabled(True)
+                # 若為今天，將整格背景標示為淺黃色
+                if current_date == date.today():
+                    cell_widget.setStyleSheet("background-color: #fff9c4; border: 2px solid #fbc02d;")
+            else:
+                checkbox.setEnabled(False)
+                # 不在範圍內的日期，直接將字體覆蓋為淺灰色以示區別
+                checkbox.setStyleSheet(checkbox.styleSheet() + "color: #bbbbbb;") 
+
+            cell_layout.addWidget(checkbox)
+            cell_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell_layout.setContentsMargins(5, 5, 5, 5)
+            
+            table.setCellWidget(row, col, cell_widget)
+            
+            current_date += timedelta(days=1)
+            col += 1
+            if col > 6:
+                col = 0
+                row += 1
+                
+        return table
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = AttendanceCalendar()
+    window.show()
+    sys.exit(app.exec())
