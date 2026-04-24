@@ -9,6 +9,7 @@ import os
 # ==========================================
 SAVE_FILE = "project_data_v2.csv"
 REGION_FILE = "regions.csv"
+INFO_FILE = "project_info.csv"  # 新增：儲存工程基本資訊的檔案
 
 def load_data():
     if os.path.exists(SAVE_FILE):
@@ -23,6 +24,15 @@ def load_regions():
         return pd.read_csv(REGION_FILE)['區域名稱'].tolist()
     return ["主區域"]
 
+# 新增：載入工程名稱
+def load_project_name():
+    if os.path.exists(INFO_FILE):
+        try:
+            return pd.read_csv(INFO_FILE)['工程名稱'].iloc[0]
+        except:
+            return "未命名工程案"
+    return "未命名工程案"
+
 # ==========================================
 # 初始化設定
 # ==========================================
@@ -32,9 +42,19 @@ if 'tasks' not in st.session_state:
     st.session_state.tasks = load_data()
 if 'regions' not in st.session_state:
     st.session_state.regions = load_regions()
+if 'project_name' not in st.session_state:
+    st.session_state.project_name = load_project_name()
 
 st.title("🏢 營建工程進度規劃系統")
-project_name = st.text_input("📌 工程案名稱：", value="未命名工程案")
+
+# --- 【關鍵修正】工程名稱存檔邏輯 ---
+current_name = st.text_input("📌 工程案名稱：", value=st.session_state.project_name)
+
+# 偵測名稱是否有變動，有的話立即存檔
+if current_name != st.session_state.project_name:
+    st.session_state.project_name = current_name
+    pd.DataFrame([{'工程名稱': current_name}]).to_csv(INFO_FILE, index=False)
+    st.toast("✅ 工程名稱已更新存檔", icon="🏗️")
 
 # ==========================================
 # 區域管理器 (支援新增與更名)
@@ -93,7 +113,6 @@ with st.sidebar.form("add_task_form"):
 # ==========================================
 st.subheader("📋 工作清單與圖表")
 
-# 只保留這一個 Data Editor
 edited_df = st.data_editor(
     st.session_state.tasks, 
     num_rows="dynamic", 
@@ -101,7 +120,6 @@ edited_df = st.data_editor(
     key="main_editor"
 )
 
-# 偵測變動並立即寫入 CSV
 if not edited_df.equals(st.session_state.tasks):
     st.session_state.tasks = edited_df
     st.session_state.tasks.to_csv(SAVE_FILE, index=False)
@@ -127,7 +145,6 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         normal_tasks = plot_df[~plot_df['是否為里程碑']]
         milestones = plot_df[plot_df['是否為里程碑']]
         
-        # 畫長條圖
         fig = px.timeline(
             normal_tasks, 
             x_start="開始時間", 
@@ -135,14 +152,13 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             y="工作項目", 
             color="區域",
             color_discrete_map=region_color_map,
-            title=f"{project_name} - 進度總表",
+            title=f"{st.session_state.project_name} - 進度總表", # 這裡改用 session_state
             height=300 + len(df)*35
         )
         
         regions_with_bars = set(normal_tasks['區域'].unique())
         added_star_legends = set()
         
-        # 畫里程碑
         if not milestones.empty:
             for _, m in milestones.iterrows():
                 reg = m['區域']
@@ -166,14 +182,13 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                     legendgroup=reg          
                 ))
 
-        # 圖表樣式設定
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
             xaxis_title="日期",
             yaxis_title="工作項目",
             hovermode="closest",
-            plot_bgcolor="#d3d3d3",   # 灰色背景
-            paper_bgcolor="#d3d3d3",  # 灰色背景
+            plot_bgcolor="#d3d3d3",   
+            paper_bgcolor="#d3d3d3",  
             xaxis=dict(showgrid=True, gridcolor='white', tickformat="%m/%d"),
             yaxis=dict(showgrid=True, gridcolor='white'),
             margin=dict(l=20, r=20, t=60, b=20)
