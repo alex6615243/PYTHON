@@ -103,6 +103,8 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         # 確保時間格式正確
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
+
+        df['工作項目'] = df['工作項目'].astype(str)
         
         # 為了讓 Plotly 的長條圖能夠包容最後一天，我們在繪圖專用的 DataFrame 中把完成日 +1 天
         plot_df = df.copy()
@@ -135,7 +137,7 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                 ))
 
         # 反轉 Y 軸讓最新的資料在上面，並優化版面
-        fig.update_yaxes(autorange="reversed")
+        fig.update_yaxes(autorange="reversed" , type='category')
         fig.update_layout(
             xaxis_title="日期",
             yaxis_title="工作項目",
