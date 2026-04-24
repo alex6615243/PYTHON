@@ -104,13 +104,13 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         
         # 1. 建立核心顏色對照表，確保長條圖與星號共用
         unique_regions = df['區域'].unique()
-        color_seq = px.colors.qualitative.Plotly # 使用 Plotly 預設美觀色系
+        color_seq = px.colors.qualitative.Plotly 
         region_color_map = {reg: color_seq[i % len(color_seq)] for i, reg in enumerate(unique_regions)}
         
         plot_df = df.copy()
         plot_df['繪圖結束時間'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
-        # 2. 畫長條圖 (指定 color_discrete_map)
+        # 2. 畫長條圖
         fig = px.timeline(
             plot_df[~plot_df['是否為里程碑']], 
             x_start="開始時間", 
@@ -122,11 +122,10 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             height=300 + len(df)*35
         )
         
-        # 3. 畫里程碑 (從對照表抓取對應區域的顏色)
+        # 3. 畫里程碑
         milestones = plot_df[plot_df['是否為里程碑']]
         if not milestones.empty:
             for _, m in milestones.iterrows():
-                # 抓取該區域專屬顏色
                 m_color = region_color_map.get(m['區域'], "gray")
                 
                 fig.add_trace(go.Scatter(
@@ -136,12 +135,13 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                     marker=dict(
                         symbol='star', 
                         size=22, 
-                        color=m_color, # 顏色與區域一致
+                        color=m_color, 
                         line=dict(color='black', width=1.5)
                     ),
                     text=[f" {m['開始時間'].strftime('%m/%d')}"],
                     textposition='middle right',
-                    showlegend=False
+                    showlegend=False,
+                    legendgroup=m['區域']  # 👈 【關鍵修復】將星號綁定到該區域的圖例群組
                 ))
 
         # 4. 強制 Y 軸為文字分類模式，並反轉排序
