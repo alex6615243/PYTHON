@@ -5,14 +5,20 @@ import plotly.graph_objects as go
 import os
 
 # ==========================================
-# 檔案儲存與載入
+# 檔案儲存與載入設定
 # ==========================================
 SAVE_FILE = "project_data_v2.csv"
 REGION_FILE = "regions.csv"
+INFO_FILE = "project_info.csv"  # 負責儲存工程名稱
 
 def load_data():
     if os.path.exists(SAVE_FILE):
         df = pd.read_csv(SAVE_FILE)
+        
+        # 💡 【防呆機制】：如果讀到的舊檔案沒有「是否為里程碑」欄位，自動補上 False，避免報錯
+        if '是否為里程碑' not in df.columns:
+            df['是否為里程碑'] = False
+            
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
         return df
@@ -23,6 +29,14 @@ def load_regions():
         return pd.read_csv(REGION_FILE)['區域名稱'].tolist()
     return ["主區域"]
 
+def load_project_name():
+    if os.path.exists(INFO_FILE):
+        try:
+            return pd.read_csv(INFO_FILE)['工程名稱'].iloc[0]
+        except:
+            return "未命名工程案"
+    return "未命名工程案"
+
 # ==========================================
 # 初始化設定
 # ==========================================
@@ -32,9 +46,17 @@ if 'tasks' not in st.session_state:
     st.session_state.tasks = load_data()
 if 'regions' not in st.session_state:
     st.session_state.regions = load_regions()
+if 'project_name' not in st.session_state:
+    st.session_state.project_name = load_project_name()
 
 st.title("🏢 營建工程進度規劃系統")
-project_name = st.text_input("📌 工程案名稱：", value="未命名工程案")
+
+# 💡 【名稱存檔機制】：偵測名稱變動並存檔
+current_name = st.text_input("📌 工程案名稱：", value=st.session_state.project_name)
+if current_name != st.session_state.project_name:
+    st.session_state.project_name = current_name
+    pd.DataFrame([{'工程名稱': current_name}]).to_csv(INFO_FILE, index=False)
+    st.toast("✅ 工程名稱已更新存檔", icon="🏗️")
 
 # ==========================================
 # 區域管理器 (支援新增與更名)
@@ -93,7 +115,7 @@ with st.sidebar.form("add_task_form"):
 # ==========================================
 st.subheader("📋 工作清單與圖表")
 
-# 只保留這一個 Data Editor
+# 只有一個 Data Editor
 edited_df = st.data_editor(
     st.session_state.tasks, 
     num_rows="dynamic", 
@@ -135,7 +157,7 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             y="工作項目", 
             color="區域",
             color_discrete_map=region_color_map,
-            title=f"{project_name} - 進度總表",
+            title=f"{st.session_state.project_name} - 進度總表",  # 標題綁定工程名稱
             height=300 + len(df)*35
         )
         
