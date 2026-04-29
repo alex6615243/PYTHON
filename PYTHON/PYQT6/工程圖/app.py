@@ -56,29 +56,41 @@ if 'subcontractors' not in st.session_state:
 st.title("🏢 營建工程進度規劃系統")
 
 # ==========================================
-# 4. 側邊欄：區域與廠商管理
+# 4. 側邊欄：區域與廠商管理 (加上通知功能)
 # ==========================================
 st.sidebar.header("⚙️ 基礎資料管理")
 
 # 區域管理
 with st.sidebar.expander("📍 區域管理"):
-    new_reg = st.text_input("新增區域名稱")
+    new_reg = st.text_input("新增區域名稱", key="new_reg_input")
     if st.button("➕ 加入區域"):
-        if new_reg and new_reg not in st.session_state.regions:
-            supabase.table("regions").insert({"name": new_reg}).execute()
-            st.session_state.regions.append(new_reg)
-            st.rerun()
+        if new_reg:
+            if new_reg not in st.session_state.regions:
+                supabase.table("regions").insert({"name": new_reg}).execute()
+                st.session_state.regions.append(new_reg)
+                # 💡 新增成功通知
+                st.toast(f"✅ 區域「{new_reg}」已成功新增！", icon="📍")
+                st.rerun()
+            else:
+                st.sidebar.warning("該區域已存在")
+        else:
+            st.sidebar.error("請輸入區域名稱")
 
-# 廠商管理 (新增功能)
+# 廠商管理
 with st.sidebar.expander("👷 廠商管理"):
-    new_sub = st.text_input("新增廠商名稱")
+    new_sub = st.text_input("新增廠商名稱", key="new_sub_input")
     if st.button("➕ 加入廠商"):
-        if new_sub and new_sub not in st.session_state.subcontractors:
-            supabase.table("subcontractors").insert({"name": new_sub}).execute()
-            st.session_state.subcontractors.append(new_sub)
-            st.rerun()
-
-# ==========================================
+        if new_sub:
+            if new_sub not in st.session_state.subcontractors:
+                supabase.table("subcontractors").insert({"name": new_sub}).execute()
+                st.session_state.subcontractors.append(new_sub)
+                # 💡 新增成功通知
+                st.toast(f"✅ 廠商「{new_sub}」已成功新增！", icon="👷")
+                st.rerun()
+            else:
+                st.sidebar.warning("該廠商已存在")
+        else:
+            st.sidebar.error("請輸入廠商名稱")
 # 5. 新增工作項目
 # ==========================================
 st.sidebar.divider()
