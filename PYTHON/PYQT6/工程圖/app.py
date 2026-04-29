@@ -194,13 +194,18 @@ st.divider()
 col_ctrl1, col_ctrl2 = st.columns([1, 2])
 group_target = col_ctrl1.radio("📊 圖表分類維度：", ["依區域", "依施工廠商"], horizontal=True)
 
-if st.button("🌟 生成互動式甘特圖", type="primary"):
+if st.button("甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
         # 設定分類基準
         color_col = "區域" if group_target == "依區域" else "施工廠商"
         
         plot_df = df.copy()
+        
+        # 🛡️ 關鍵修復：強制把空值填為 False，並宣告整個欄位為布林值 (bool)
+        plot_df['是否為里程碑'] = plot_df['是否為里程碑'].fillna(False).astype(bool)
+        
+        # 確保長條圖涵蓋完整結束日
         plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
         # 顏色對照表
@@ -208,6 +213,7 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         color_seq = px.colors.qualitative.Plotly
         color_map = {val: color_seq[i % len(color_seq)] for i, val in enumerate(unique_vals)}
 
+        # 這裡的 ~ 運算就不會再報錯了！
         fig = px.timeline(
             plot_df[~plot_df['是否為里程碑']], 
             x_start="開始時間", x_end="繪圖結束", y="工作項目", 
@@ -216,6 +222,8 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             title=f"工程進度總表 (分類：{color_col})",
             height=400 + len(df)*30
         )
+        
+        # ... 下方的程式碼維持不變 (里程碑繪製、今日線、layout設定等) ...
 
         # 加上里程碑與今日線 (邏輯同前)
         try:
