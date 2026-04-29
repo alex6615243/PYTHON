@@ -197,60 +197,86 @@ if not edited_df.equals(st.session_state.tasks):
         st.error(f"同步失敗：{e}")
 
             
-       
-        
-# 7. 多維度甘特圖生成
+    # ==========================================
+# 7. 多維度甘特圖生成 (修復里程碑星星與全黑字體版)
 # ==========================================
 st.divider()
 col_ctrl1, col_ctrl2 = st.columns([1, 2])
 group_target = col_ctrl1.radio("📊 圖表分類維度：", ["依區域", "依施工廠商"], horizontal=True)
 
-if st.button("甘特圖", type="primary"):
+if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
-        # 設定分類基準
+        # 1. 設定動態分類基準
         color_col = "區域" if group_target == "依區域" else "施工廠商"
         
         plot_df = df.copy()
         
-        # 🛡️ 關鍵修復：強制把空值填為 False，並宣告整個欄位為布林值 (bool)
+        # 2. 確保里程碑資料型態正確 (防呆)
         plot_df['是否為里程碑'] = plot_df['是否為里程碑'].fillna(False).astype(bool)
-        
-        # 確保長條圖涵蓋完整結束日
         plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
-        # 顏色對照表
+        # 3. 建立動態顏色對照表
         unique_vals = df[color_col].unique()
         color_seq = px.colors.qualitative.Plotly
         color_map = {val: color_seq[i % len(color_seq)] for i, val in enumerate(unique_vals)}
 
-        # 這裡的 ~ 運算就不會再報錯了！
+        # 4. 繪製一般任務長條圖
         fig = px.timeline(
             plot_df[~plot_df['是否為里程碑']], 
             x_start="開始時間", x_end="繪圖結束", y="工作項目", 
             color=color_col,
             color_discrete_map=color_map,
-            title=f"工程進度總表 (分類：{color_col})",
             height=400 + len(df)*30
         )
-        
-        # ... 下方的程式碼維持不變 (里程碑繪製、今日線、layout設定等) ...
 
-        # 加上里程碑與今日線 (邏輯同前)
+        # 🌟 5. 處理里程碑星號 (動態抓取對應分類的顏色)
+        ms_df = plot_df[plot_df['是否為里程碑']]
+        for _, m in ms_df.iterrows():
+            fig.add_trace(go.Scatter(
+                x=[m['開始時間']], 
+                y=[m['工作項目']], 
+                mode='markers+text',
+                marker=dict(
+                    symbol='star', size=20, 
+                    # 💡 這裡將寫死的 '區域' 改為動態變數 color_col
+                    color=color_map.get(m[color_col], 'gray'), 
+                    line=dict(color='black', width=1)
+                ),
+                text=[f" {m['開始時間'].strftime('%m/%d')}"], 
+                textposition='middle right', 
+                textfont=dict(color='black', size=14), 
+                name=m[color_col],        # 💡 同步修改為動態對應
+                legendgroup=m[color_col], # 💡 同步修改為動態對應
+                showlegend=False
+            ))
+
+        # 6. 加入今日垂直線
         try:
             today = pd.Timestamp.now(tz='Asia/Taipei')
         except:
             today = pd.Timestamp.now()
             
         fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
-        fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14), xanchor="left", xshift=5)
+        fig.add_annotation(
+            x=today, y=1, yref="paper", yanchor="bottom", 
+            text="今日", showarrow=False, 
+            font=dict(color="red", size=14), 
+            xanchor="left", xshift=5
+        )
 
+        # 7. 版面與黑字/黑線格式強制設定
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
+            title=dict(text=f"{st.session_state.project_name} - 進度總表 (分類：{color_col})", font=dict(color="black", size=20)),
+            xaxis_title=dict(text="日期", font=dict(color="black", size=14)),
+            yaxis_title=dict(text="工作項目", font=dict(color="black", size=14)),
             font=dict(color="black"),
             plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3",
-            xaxis=dict(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black")),
-            yaxis=dict(showgrid=True, gridcolor='black', tickfont=dict(color="black")),
-            legend=dict(font=dict(color="black"), title=dict(font=dict(color="black")))
+            xaxis=dict(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12)),
+            yaxis=dict(showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14)),
+            legend=dict(font=dict(color="black")),
+            margin=dict(l=20, r=20, t=60, b=20)
         )
+        
         st.plotly_chart(fig, use_container_width=True)
