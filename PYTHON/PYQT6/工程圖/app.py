@@ -141,13 +141,13 @@ if not edited_df.equals(st.session_state.tasks):
         st.error(f"❌ 同步失敗！錯誤訊息：{str(e)}")
         st.info("提示：這通常是 Supabase 的 RLS 權限阻擋，請到 Supabase 後台關閉 RLS 或設定 Insert/Delete Policy。")
 
-# ==========================================
-# 7. 繪製甘特圖
+# 7. 繪製甘特圖 (修正格線與日期格式)
 # ==========================================
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
         plot_df = df.copy()
+        # 為了讓最後一天的長條圖顯示完整，繪圖結束時間加 1 天
         plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
         unique_regions = df['區域'].unique()
@@ -156,20 +156,55 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
 
         fig = px.timeline(
             plot_df[~plot_df['是否為里程碑']], 
-            x_start="開始時間", x_end="繪圖結束", y="工作項目", color="區域",
+            x_start="開始時間", 
+            x_end="繪圖結束", 
+            y="工作項目", 
+            color="區域",
             color_discrete_map=color_map,
             title=f"{st.session_state.project_name} - 進度總表",
             height=400 + len(df)*30
         )
 
+        # 處理里程碑星號
         ms_df = plot_df[plot_df['是否為里程碑']]
         for _, m in ms_df.iterrows():
             fig.add_trace(go.Scatter(
-                x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
-                marker=dict(symbol='star', size=20, color=color_map.get(m['區域'], 'gray'), line=dict(color='black', width=1)),
-                text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right', name=m['區域'], legendgroup=m['區域'], showlegend=False
+                x=[m['開始時間']], 
+                y=[m['工作項目']], 
+                mode='markers+text',
+                marker=dict(
+                    symbol='star', size=20, 
+                    color=color_map.get(m['區域'], 'gray'), 
+                    line=dict(color='black', width=1)
+                ),
+                text=[f" {m['開始時間'].strftime('%m/%d')}"], 
+                textposition='middle right', 
+                name=m['區域'], 
+                legendgroup=m['區域'], 
+                showlegend=False
             ))
 
+        # 💡 重點修正區：設定格線與日期格式
         fig.update_yaxes(autorange="reversed", type='category')
-        fig.update_layout(plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3")
+        fig.update_layout(
+            xaxis_title="日期",
+            yaxis_title="工作項目",
+            hovermode="closest",
+            plot_bgcolor="#d3d3d3",   # 灰色背景
+            paper_bgcolor="#d3d3d3",  # 灰色背景
+            # 設定 X 軸：顯示白色格線，並強制日期格式為 月/日
+            xaxis=dict(
+                showgrid=True, 
+                gridcolor='white', 
+                tickformat="%m/%d",  # ⬅️ 這裡修正日期顯示格式
+                dtick="D1"           # 如果希望每天都有格線，可以加上這行
+            ),
+            # 設定 Y 軸：顯示白色橫向格線
+            yaxis=dict(
+                showgrid=True, 
+                gridcolor='white'
+            ),
+            margin=dict(l=20, r=20, t=60, b=20)
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
