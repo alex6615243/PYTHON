@@ -55,7 +55,7 @@ if 'regions' not in st.session_state:
 if 'project_name' not in st.session_state:
     st.session_state.project_name = load_project_name()
 
-st.title("🏢 營建工程進度規劃系統 (Supabase 版)")
+st.title("營建工程進度規劃系統")
 
 current_name = st.text_input("📌 工程案名稱：", value=st.session_state.project_name)
 if current_name != st.session_state.project_name:
