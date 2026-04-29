@@ -211,66 +211,89 @@ if not edited_df.equals(st.session_state.tasks):
             st.toast("💾 資料同步成功", icon="☁️")
         except Exception as e:
             st.error(f"同步失敗：{e}")
+
 # ==========================================
-# 7. 甘特圖生成 (全項目日期排序版)
+# 7. 多維度甘特圖生成 (強健日期排序版)
 # ==========================================
 st.divider()
 col_ctrl1, col_ctrl2 = st.columns([1, 2])
 group_target = col_ctrl1.radio("📊 圖表分類維度：", ["依區域", "依施工廠商"], horizontal=True)
 
 if st.button("🌟 生成互動式甘特圖", type="primary"):
-    df = st.session_state.tasks.copy()
+    # 💡 這裡使用當前編輯後的資料 (edited_df)，確保圖表與表格同步
+    df = edited_df.copy() 
+    
     if not df.empty:
+        # 1. 設定動態分類基準
         color_col = "區域" if group_target == "依區域" else "施工廠商"
-        plot_df = df.copy()
-        plot_df['是否為里程碑'] = plot_df['是否為里程碑'].fillna(False).astype(bool)
-        plot_df['開始時間'] = pd.to_datetime(plot_df['開始時間'])
-        plot_df['完成時間'] = pd.to_datetime(plot_df['完成時間'])
-        plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
-        plot_df = plot_df.sort_values(by="開始時間", ascending=True)
-        sorted_task_order = plot_df['工作項目'].tolist()
         
-        all_unique_vals = plot_df[color_col].unique()
-        color_seq = px.colors.qualitative.Plotly
-        color_map = {val: color_seq[i % len(color_seq)] for i, val in enumerate(all_unique_vals)}
+        # 2. 🛡️ 核心防護：強制轉換日期，錯誤的轉為 NaT (Not a Time)
+        df['開始時間'] = pd.to_datetime(df['開始時間'], errors='coerce')
+        df['完成時間'] = pd.to_datetime(df['完成時間'], errors='coerce')
+        
+        # 3. 🛡️ 核心防護：剔除掉「沒有日期」的無效任務，避免排序崩潰
+        plot_df = df.dropna(subset=['開始時間', '完成時間', '工作項目']).copy()
+        
+        if plot_df.empty:
+            st.warning("⚠️ 沒有完整的任務資料（需包含項目名稱、開始與完成日期）可供繪圖。")
+        else:
+            # 4. 數據預處理
+            plot_df['是否為里程碑'] = plot_df['是否為里程碑'].fillna(False).astype(bool)
+            plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
+            
+            # 🚀 5. 排序：全體依開始日期排序
+            plot_df = plot_df.sort_values(by="開始時間", ascending=True)
+            
+            # 提取排序後的清單決定 Y 軸順序
+            sorted_task_order = plot_df['工作項目'].tolist()
+            
+            # 6. 建立顏色表
+            all_unique_vals = plot_df[color_col].unique()
+            color_seq = px.colors.qualitative.Plotly
+            color_map = {val: color_seq[i % len(color_seq)] for i, val in enumerate(all_unique_vals)}
 
-        tasks_only = plot_df[~plot_df['是否為里程碑']]
-        fig = px.timeline(
-            tasks_only, x_start="開始時間", x_end="繪圖結束", y="工作項目", 
-            color=color_col, color_discrete_map=color_map, height=400 + len(df)*30
-        )
+            # 7. 繪製一般任務
+            tasks_only = plot_df[~plot_df['是否為里程碑']]
+            fig = px.timeline(
+                tasks_only, x_start="開始時間", x_end="繪圖結束", y="工作項目", 
+                color=color_col, color_discrete_map=color_map,
+                height=400 + len(plot_df)*30
+            )
 
-        categories_in_legend = set(tasks_only[color_col].unique())
-        ms_df = plot_df[plot_df['是否為里程碑']]
-        for _, m in ms_df.iterrows():
-            curr_cat = m[color_col]
-            show_leg = curr_cat not in categories_in_legend
-            if show_leg: categories_in_legend.add(curr_cat)
+            # 8. 處理里程碑 (星星)
+            categories_in_legend = set(tasks_only[color_col].unique())
+            ms_df = plot_df[plot_df['是否為里程碑']]
+            for _, m in ms_df.iterrows():
+                curr_cat = m[color_col]
+                show_leg = curr_cat not in categories_in_legend
+                if show_leg: categories_in_legend.add(curr_cat)
 
-            fig.add_trace(go.Scatter(
-                x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
-                marker=dict(symbol='star', size=20, color=color_map.get(curr_cat, 'gray'), line=dict(color='black', width=1)),
-                text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right',
-                textfont=dict(color='black', size=14), name=curr_cat, 
-                legendgroup=curr_cat, showlegend=show_leg
-            ))
+                fig.add_trace(go.Scatter(
+                    x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
+                    marker=dict(symbol='star', size=20, color=color_map.get(curr_cat, 'gray'), line=dict(color='black', width=1)),
+                    text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right',
+                    textfont=dict(color='black', size=14), name=curr_cat, 
+                    legendgroup=curr_cat, showlegend=show_leg
+                ))
 
-        try:
-            today = pd.Timestamp.now(tz='Asia/Taipei')
-        except:
-            today = pd.Timestamp.now()
-        fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
-        fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14), xanchor="left", xshift=5)
+            # 9. 今日線
+            try:
+                today = pd.Timestamp.now(tz='Asia/Taipei')
+            except:
+                today = pd.Timestamp.now()
+            fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
 
-        fig.update_yaxes(categoryorder='array', categoryarray=sorted_task_order, autorange="reversed")
-        fig.update_layout(
-            title=dict(text=f"{st.session_state.project_name} - 進度總表", font=dict(color="black", size=20)),
-            plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3",
-            xaxis=dict(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black")),
-            yaxis=dict(showgrid=True, gridcolor='black', tickfont=dict(color="black")),
-            margin=dict(l=20, r=20, t=60, b=20)
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            # 10. 強制 Y 軸順序與樣式
+            fig.update_yaxes(categoryorder='array', categoryarray=sorted_task_order, autorange="reversed")
+            fig.update_layout(
+                title=dict(text=f"{st.session_state.project_name} - 進度總表", font=dict(color="black", size=20)),
+                font=dict(color="black"),
+                plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3",
+                xaxis=dict(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black")),
+                yaxis=dict(showgrid=True, gridcolor='black', tickfont=dict(color="black")),
+                margin=dict(l=20, r=20, t=60, b=20)
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
 # 8. 系統備份與回復功能 (新增刪除備份功能)
