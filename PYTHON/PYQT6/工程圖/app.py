@@ -2,43 +2,49 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import os
+from supabase import create_client, Client
 
 # ==========================================
-# 檔案儲存與載入設定
+# 1. Supabase 初始化連接 (這裡定義了 supabase，絕對不能漏掉！)
 # ==========================================
-SAVE_FILE = "project_data_v2.csv"
-REGION_FILE = "regions.csv"
-INFO_FILE = "project_info.csv"  # 負責儲存工程名稱
+@st.cache_resource
+def init_connection():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
+# 這裡把連線物件命名為 supabase，後面的程式才能呼叫它
+supabase = init_connection()
+
+# ==========================================
+# 2. 資料讀寫邏輯
+# ==========================================
 def load_data():
-    if os.path.exists(SAVE_FILE):
-        df = pd.read_csv(SAVE_FILE)
-        
-        # 💡 【防呆機制】：如果讀到的舊檔案沒有「是否為里程碑」欄位，自動補上 False，避免報錯
-        if '是否為里程碑' not in df.columns:
-            df['是否為里程碑'] = False
-            
+    res = supabase.table("tasks").select("*").execute()
+    df = pd.DataFrame(res.data)
+    if not df.empty:
+        df = df.rename(columns={
+            'task_name': '工作項目',
+            'start_date': '開始時間',
+            'end_date': '完成時間',
+            'region': '區域',
+            'is_milestone': '是否為里程碑'
+        })
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
-        return df
+        return df[['工作項目', '開始時間', '完成時間', '區域', '是否為里程碑']]
     return pd.DataFrame(columns=['工作項目', '開始時間', '完成時間', '區域', '是否為里程碑'])
 
 def load_regions():
-    if os.path.exists(REGION_FILE):
-        return pd.read_csv(REGION_FILE)['區域名稱'].tolist()
-    return ["主區域"]
+    res = supabase.table("regions").select("name").execute()
+    return [item['name'] for item in res.data] if res.data else ["主區域"]
 
 def load_project_name():
-    if os.path.exists(INFO_FILE):
-        try:
-            return pd.read_csv(INFO_FILE)['工程名稱'].iloc[0]
-        except:
-            return "未命名工程案"
-    return "未命名工程案"
+    res = supabase.table("project_config").select("project_name").eq("id", 1).execute()
+    return res.data[0]['project_name'] if res.data else "未命名工程案"
 
 # ==========================================
-# 初始化設定
+# 3. 初始化設定與網頁標題
 # ==========================================
 st.set_page_config(layout="wide", page_title="多區域工程規劃系統")
 
@@ -49,88 +55,72 @@ if 'regions' not in st.session_state:
 if 'project_name' not in st.session_state:
     st.session_state.project_name = load_project_name()
 
-st.title("🏢 營建工程進度規劃系統")
+st.title("🏢 營建工程進度規劃系統 (Supabase 版)")
 
-# 💡 【名稱存檔機制】：偵測名稱變動並存檔
 current_name = st.text_input("📌 工程案名稱：", value=st.session_state.project_name)
 if current_name != st.session_state.project_name:
+    supabase.table("project_config").upsert({'id': 1, 'project_name': current_name}).execute()
     st.session_state.project_name = current_name
-    pd.DataFrame([{'工程名稱': current_name}]).to_csv(INFO_FILE, index=False)
-    st.toast("✅ 工程名稱已更新存檔", icon="🏗️")
+    st.toast("✅ 工程名稱已同步", icon="🏗️")
 
 # ==========================================
-# 區域管理器 (支援新增與更名)
+# 4. 區域管理 (Sidebar)
 # ==========================================
 st.sidebar.header("⚙️ 區域管理")
-new_region_name = st.sidebar.text_input("新增區域名稱：")
+new_region = st.sidebar.text_input("新增區域名稱：")
 if st.sidebar.button("➕ 新增區域"):
-    if new_region_name and new_region_name not in st.session_state.regions:
-        st.session_state.regions.append(new_region_name)
-        pd.DataFrame(st.session_state.regions, columns=['區域名稱']).to_csv(REGION_FILE, index=False)
-        st.sidebar.success(f"已新增：{new_region_name}")
+    if new_region and new_region not in st.session_state.regions:
+        supabase.table("regions").insert({"name": new_region}).execute()
+        st.session_state.regions.append(new_region)
+        st.sidebar.success(f"已新增：{new_region}")
+        st.rerun()
 
 region_df = pd.DataFrame(st.session_state.regions, columns=['區域名稱'])
-edited_region_df = st.sidebar.data_editor(region_df, num_rows="dynamic", use_container_width=True)
-
-if not edited_region_df.equals(region_df):
-    old_regions = region_df['區域名稱'].tolist()
-    new_regions = edited_region_df['區域名稱'].tolist()
-    for old, new in zip(old_regions, new_regions):
-        if old != new:
-            st.session_state.tasks.loc[st.session_state.tasks['區域'] == old, '區域'] = new
-    st.session_state.regions = new_regions
-    pd.DataFrame(new_regions, columns=['區域名稱']).to_csv(REGION_FILE, index=False)
-    st.session_state.tasks.to_csv(SAVE_FILE, index=False)
-    st.sidebar.info("區域已更新並同步工作項目")
+st.sidebar.data_editor(region_df, use_container_width=True, disabled=True)
 
 # ==========================================
-# 側邊欄：新增工作項目
+# 5. 新增工作項目 (Sidebar)
 # ==========================================
 st.sidebar.divider()
 st.sidebar.header("➕ 新增工作")
 with st.sidebar.form("add_task_form"):
-    selected_region = st.selectbox("歸屬區域", st.session_state.regions)
-    task_name = st.text_input("項目名稱")
-    col1, col2 = st.columns(2)
-    start_d = col1.date_input("開始")
-    end_d = col2.date_input("結束")
+    sel_reg = st.selectbox("歸屬區域", st.session_state.regions)
+    t_name = st.text_input("項目名稱")
+    c1, c2 = st.columns(2)
+    s_d = c1.date_input("開始")
+    e_d = c2.date_input("結束")
     is_m = st.checkbox("里程碑")
     
     if st.form_submit_button("加入清單"):
-        if task_name:
-            if is_m: end_d = start_d
-            new_row = pd.DataFrame([{
-                '工作項目': str(task_name), 
-                '開始時間': pd.to_datetime(start_d),
-                '完成時間': pd.to_datetime(end_d),
-                '區域': selected_region,
-                '是否為里程碑': is_m
-            }])
-            st.session_state.tasks = pd.concat([st.session_state.tasks, new_row], ignore_index=True)
-            st.session_state.tasks.to_csv(SAVE_FILE, index=False)
-            st.success("已新增並自動存檔")
+        if t_name:
+            if is_m: e_d = s_d
+            new_task = {
+                "task_name": t_name,
+                "start_date": s_d.isoformat(),
+                "end_date": e_d.isoformat(),
+                "region": sel_reg,
+                "is_milestone": is_m
+            }
+            supabase.table("tasks").insert(new_task).execute()
+            st.session_state.tasks = load_data()
+            st.success("已新增至資料庫")
+            st.rerun()
 
 # ==========================================
-# 主畫面：工作清單 (具備自動存檔)
+# 6. 主畫面：工作清單與自動存檔 (含防呆除錯)
 # ==========================================
-st.subheader("📋 工作清單與圖表")
-
-# 只有一個 Data Editor
+st.subheader("📋 工作清單")
 edited_df = st.data_editor(
     st.session_state.tasks, 
     num_rows="dynamic", 
     use_container_width=True,
-    key="main_editor"
+    key="db_editor"
 )
 
-# 偵測變動並立即寫入 CSV
-# 修改後的自動存檔邏輯
 if not edited_df.equals(st.session_state.tasks):
     try:
-        # 1. 嘗試執行刪除
         res_del = supabase.table("tasks").delete().neq("id", -1).execute()
         
-        # 2. 準備上傳清單
         upload_list = []
         for _, row in edited_df.iterrows():
             upload_list.append({
@@ -142,87 +132,44 @@ if not edited_df.equals(st.session_state.tasks):
             })
         
         if upload_list:
-            # 3. 嘗試執行寫入並抓取回傳
             res_ins = supabase.table("tasks").insert(upload_list).execute()
             
         st.session_state.tasks = edited_df
         st.toast("💾 資料庫同步成功", icon="☁️")
         
     except Exception as e:
-        # 如果失敗，直接把錯誤訊息噴在畫面上
         st.error(f"❌ 同步失敗！錯誤訊息：{str(e)}")
-        st.info("提示：請檢查 Supabase 的 RLS Policy 是否已開啟 Insert 權限。")
+        st.info("提示：這通常是 Supabase 的 RLS 權限阻擋，請到 Supabase 後台關閉 RLS 或設定 Insert/Delete Policy。")
 
 # ==========================================
-# 繪圖區
+# 7. 繪製甘特圖
 # ==========================================
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
-        df['開始時間'] = pd.to_datetime(df['開始時間'])
-        df['完成時間'] = pd.to_datetime(df['完成時間'])
-        df['工作項目'] = df['工作項目'].astype(str) 
+        plot_df = df.copy()
+        plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
         unique_regions = df['區域'].unique()
-        color_seq = px.colors.qualitative.Plotly 
-        region_color_map = {reg: color_seq[i % len(color_seq)] for i, reg in enumerate(unique_regions)}
-        
-        plot_df = df.copy()
-        plot_df['繪圖結束時間'] = plot_df['完成時間'] + pd.Timedelta(days=1)
-        
-        normal_tasks = plot_df[~plot_df['是否為里程碑']]
-        milestones = plot_df[plot_df['是否為里程碑']]
-        
-        # 畫長條圖
-        fig = px.timeline(
-            normal_tasks, 
-            x_start="開始時間", 
-            x_end="繪圖結束時間", 
-            y="工作項目", 
-            color="區域",
-            color_discrete_map=region_color_map,
-            title=f"{st.session_state.project_name} - 進度總表",  # 標題綁定工程名稱
-            height=300 + len(df)*35
-        )
-        
-        regions_with_bars = set(normal_tasks['區域'].unique())
-        added_star_legends = set()
-        
-        # 畫里程碑
-        if not milestones.empty:
-            for _, m in milestones.iterrows():
-                reg = m['區域']
-                m_color = region_color_map.get(reg, "gray")
-                needs_legend = (reg not in regions_with_bars) and (reg not in added_star_legends)
-                if needs_legend:
-                    added_star_legends.add(reg)
-                
-                fig.add_trace(go.Scatter(
-                    x=[m['開始時間']],
-                    y=[m['工作項目']],
-                    mode='markers+text',
-                    marker=dict(
-                        symbol='star', size=22, color=m_color, 
-                        line=dict(color='black', width=1.5)
-                    ),
-                    text=[f" {m['開始時間'].strftime('%m/%d')}"],
-                    textposition='middle right',
-                    showlegend=needs_legend, 
-                    name=reg,                
-                    legendgroup=reg          
-                ))
+        color_seq = px.colors.qualitative.Plotly
+        color_map = {reg: color_seq[i % len(color_seq)] for i, reg in enumerate(unique_regions)}
 
-        # 圖表樣式設定
-        fig.update_yaxes(autorange="reversed", type='category')
-        fig.update_layout(
-            xaxis_title="日期",
-            yaxis_title="工作項目",
-            hovermode="closest",
-            plot_bgcolor="#d3d3d3",   # 灰色背景
-            paper_bgcolor="#d3d3d3",  # 灰色背景
-            xaxis=dict(showgrid=True, gridcolor='white', tickformat="%m/%d"),
-            yaxis=dict(showgrid=True, gridcolor='white'),
-            margin=dict(l=20, r=20, t=60, b=20)
+        fig = px.timeline(
+            plot_df[~plot_df['是否為里程碑']], 
+            x_start="開始時間", x_end="繪圖結束", y="工作項目", color="區域",
+            color_discrete_map=color_map,
+            title=f"{st.session_state.project_name} - 進度總表",
+            height=400 + len(df)*30
         )
-        
+
+        ms_df = plot_df[plot_df['是否為里程碑']]
+        for _, m in ms_df.iterrows():
+            fig.add_trace(go.Scatter(
+                x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
+                marker=dict(symbol='star', size=20, color=color_map.get(m['區域'], 'gray'), line=dict(color='black', width=1)),
+                text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right', name=m['區域'], legendgroup=m['區域'], showlegend=False
+            ))
+
+        fig.update_yaxes(autorange="reversed", type='category')
+        fig.update_layout(plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3")
         st.plotly_chart(fig, use_container_width=True)
