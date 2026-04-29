@@ -142,7 +142,7 @@ if not edited_df.equals(st.session_state.tasks):
         st.info("提示：這通常是 Supabase 的 RLS 權限阻擋，請到 Supabase 後台關閉 RLS 或設定 Insert/Delete Policy。")
 
 # ==========================================
-# 7. 繪製甘特圖 (含今日線、格線與日期格式)
+# 7. 繪製甘特圖 (修復 Plotly 時間戳記 Bug 版)
 # ==========================================
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
@@ -185,23 +185,33 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                 showlegend=False
             ))
 
-        # 💡 新增：計算今天日期（指定台北時區）
-        # 注意：需確保環境有安裝 pytz (pip install pytz)
+        # 取得今天日期
         try:
             today = pd.Timestamp.now(tz='Asia/Taipei')
         except:
-            today = pd.Timestamp.now() # 若無時區設定則使用系統時間
+            today = pd.Timestamp.now()
 
-        # 💡 新增：在圖表上畫出「今日」垂直線
+        # 💡 解法核心：將畫線與文字分開，避開 Plotly 底層 Bug
+        # 1. 單純畫紅色虛線
         fig.add_vline(
             x=today, 
             line_width=2, 
             line_dash="dash", 
             line_color="red",
-            annotation_text="今日", 
-            annotation_position="top left",
-            annotation_font_color="red",
-            layer="above" # 確保線條在長條圖上方
+            layer="above"
+        )
+        
+        # 2. 獨立加上「今日」文字註解
+        fig.add_annotation(
+            x=today,
+            y=1,               # 定位在 Y 軸最頂端
+            yref="paper",      # 鎖定圖表外框比例，不會受任務數量影響
+            yanchor="bottom",  # 文字的底部貼齊頂端
+            text="今日",
+            showarrow=False,
+            font=dict(color="red", size=14),
+            xanchor="left",    # 文字靠線的右邊
+            xshift=5           # 稍微往右平移 5px 避免壓到線
         )
 
         # 設定格線與日期格式
@@ -210,13 +220,13 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             xaxis_title="日期",
             yaxis_title="工作項目",
             hovermode="closest",
-            plot_bgcolor="#d3d3d3",   # 灰色背景
-            paper_bgcolor="#d3d3d3",  # 灰色背景
+            plot_bgcolor="#d3d3d3",   
+            paper_bgcolor="#d3d3d3",  
             xaxis=dict(
                 showgrid=True, 
                 gridcolor='white', 
-                tickformat="%m/%d",   # 修正日期顯示格式為 月/日
-                dtick="D1"            # 每一天顯示一條格線
+                tickformat="%m/%d",   
+                dtick="D1"            
             ),
             yaxis=dict(
                 showgrid=True, 
