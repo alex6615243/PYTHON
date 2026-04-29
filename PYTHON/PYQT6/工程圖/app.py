@@ -290,3 +290,75 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         )
         
         st.plotly_chart(fig, use_container_width=True)
+
+# ==========================================
+# 8. 系統備份與回復功能 (新增於側邊欄或主畫面)
+# ==========================================
+st.sidebar.divider()
+st.sidebar.header("💾 系統備份與回復")
+
+with st.sidebar.expander("🛠️ 資料備份工具"):
+    # --- 保險 1：下載 CSV 到本地 ---
+    csv = st.session_state.tasks.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 下載目前資料為 CSV",
+        data=csv,
+        file_name=f"工程備份_{pd.Timestamp.now().strftime('%m%d_%H%M')}.csv",
+        mime='text/csv',
+        use_container_width=True
+    )
+
+    st.divider()
+
+    # --- 保險 2：雲端存儲快照 (儲存點) ---
+    b_name = st.text_input("備份名稱", placeholder="例如：開工前存檔")
+    if st.button("🚀 建立雲端儲存點", use_container_width=True):
+        try:
+            # 將 DataFrame 轉為 JSON 格式存入
+            json_data = st.session_state.tasks.to_json(orient='records', date_format='iso')
+            supabase.table("tasks_backups").insert({
+                "backup_name": b_name if b_name else "未命名備份",
+                "data_json": json_data
+            }).execute()
+            st.toast("✅ 雲端備份成功！", icon="💾")
+        except Exception as e:
+            st.error(f"備份失敗：{e}")
+
+    st.divider()
+
+    # --- 保險 3：從雲端回復資料 ---
+    st.subheader("⚠️ 從備份回復")
+    res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
+    if res_b.data:
+        b_options = {f"{item['backup_time'][5:16]} - {item['backup_name']}": item['id'] for item in res_b.data}
+        selected_b = st.selectbox("選擇儲存點", options=list(b_options.keys()))
+        
+        if st.button("🔥 確認回復資料", type="secondary", use_container_width=True):
+            try:
+                # 取得選定的備份資料
+                target_id = b_options[selected_b]
+                b_data = supabase.table("tasks_backups").select("data_json").eq("id", target_id).execute()
+                restored_list = pd.read_json(b_data.data[0]['data_json'])
+                
+                # 將回復的資料寫入主表
+                supabase.table("tasks").delete().neq("id", -1).execute()
+                
+                upload_list = []
+                for _, row in restored_list.iterrows():
+                    upload_list.append({
+                        "task_name": str(row['工作項目']),
+                        "start_date": pd.to_datetime(row['開始時間']).isoformat(),
+                        "end_date": pd.to_datetime(row['完成時間']).isoformat(),
+                        "region": row['區域'],
+                        "subcontractor": row['施工廠商'],
+                        "is_milestone": bool(row['是否為里程碑'])
+                    })
+                
+                if upload_list:
+                    supabase.table("tasks").insert(upload_list).execute()
+                
+                st.session_state.tasks = load_data()
+                st.success("✅ 資料已成功回復至指定儲存點！")
+                st.rerun()
+            except Exception as e:
+                st.error(f"回復失敗：{e}")
