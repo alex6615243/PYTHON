@@ -56,41 +56,71 @@ if 'subcontractors' not in st.session_state:
 st.title("🏢 營建工程進度規劃系統")
 
 # ==========================================
-# 4. 側邊欄：區域與廠商管理 (加上通知功能)
+# 4. 側邊欄：區域與廠商管理 (含新增、刪除與防呆)
 # ==========================================
 st.sidebar.header("⚙️ 基礎資料管理")
 
-# 區域管理
-with st.sidebar.expander("📍 區域管理"):
-    new_reg = st.text_input("新增區域名稱", key="new_reg_input")
-    if st.button("➕ 加入區域"):
-        if new_reg:
-            if new_reg not in st.session_state.regions:
+# 📍 區域管理
+with st.sidebar.expander("📍 區域管理", expanded=False):
+    tab_reg_add, tab_reg_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
+    
+    with tab_reg_add:
+        new_reg = st.text_input("新增區域名稱", key="new_reg_input")
+        if st.button("加入區域", use_container_width=True):
+            if new_reg and new_reg not in st.session_state.regions:
                 supabase.table("regions").insert({"name": new_reg}).execute()
                 st.session_state.regions.append(new_reg)
-                # 💡 新增成功通知
-                st.toast(f"✅ 區域「{new_reg}」已成功新增！", icon="📍")
+                st.toast(f"✅ 區域「{new_reg}」已新增！", icon="📍")
                 st.rerun()
+            elif new_reg in st.session_state.regions:
+                st.warning("該區域已存在")
+                
+    with tab_reg_del:
+        del_reg = st.selectbox("選擇要刪除的區域", st.session_state.regions, key="del_reg_sel")
+        if st.button("刪除區域", type="primary", use_container_width=True):
+            # 🛡️ 防呆檢查：確認該區域是否正被任務使用中
+            is_used = (st.session_state.tasks['區域'] == del_reg).any()
+            if is_used:
+                st.error(f"⚠️ 無法刪除！「{del_reg}」目前已有綁定的工程任務。請先修改或刪除相關任務。")
             else:
-                st.sidebar.warning("該區域已存在")
-        else:
-            st.sidebar.error("請輸入區域名稱")
+                try:
+                    supabase.table("regions").delete().eq("name", del_reg).execute()
+                    st.session_state.regions.remove(del_reg)
+                    st.toast(f"🗑️ 區域「{del_reg}」已成功刪除！", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"刪除失敗：{e}")
 
-# 廠商管理
-with st.sidebar.expander("👷 廠商管理"):
-    new_sub = st.text_input("新增廠商名稱", key="new_sub_input")
-    if st.button("➕ 加入廠商"):
-        if new_sub:
-            if new_sub not in st.session_state.subcontractors:
+# 👷 廠商管理
+with st.sidebar.expander("👷 廠商管理", expanded=False):
+    tab_sub_add, tab_sub_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
+    
+    with tab_sub_add:
+        new_sub = st.text_input("新增廠商名稱", key="new_sub_input")
+        if st.button("加入廠商", use_container_width=True):
+            if new_sub and new_sub not in st.session_state.subcontractors:
                 supabase.table("subcontractors").insert({"name": new_sub}).execute()
                 st.session_state.subcontractors.append(new_sub)
-                # 💡 新增成功通知
-                st.toast(f"✅ 廠商「{new_sub}」已成功新增！", icon="👷")
+                st.toast(f"✅ 廠商「{new_sub}」已新增！", icon="👷")
                 st.rerun()
+            elif new_sub in st.session_state.subcontractors:
+                st.warning("該廠商已存在")
+                
+    with tab_sub_del:
+        del_sub = st.selectbox("選擇要刪除的廠商", st.session_state.subcontractors, key="del_sub_sel")
+        if st.button("刪除廠商", type="primary", use_container_width=True):
+            # 🛡️ 防呆檢查：確認該廠商是否正被任務使用中
+            is_used = (st.session_state.tasks['施工廠商'] == del_sub).any()
+            if is_used:
+                st.error(f"⚠️ 無法刪除！「{del_sub}」目前仍在負責工程任務。請先轉移或刪除相關任務。")
             else:
-                st.sidebar.warning("該廠商已存在")
-        else:
-            st.sidebar.error("請輸入廠商名稱")
+                try:
+                    supabase.table("subcontractors").delete().eq("name", del_sub).execute()
+                    st.session_state.subcontractors.remove(del_sub)
+                    st.toast(f"🗑️ 廠商「{del_sub}」已成功刪除！", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"刪除失敗：{e}")
 # 5. 新增工作項目
 # ==========================================
 st.sidebar.divider()
