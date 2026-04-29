@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 from supabase import create_client, Client
+import datetime
 
 # ==========================================
 # 1. Supabase 初始化連接
@@ -22,20 +23,23 @@ supabase = init_connection()
 def load_data():
     res = supabase.table("tasks").select("*").execute()
     df = pd.DataFrame(res.data)
+    cols = ['工作項目', '開始時間', '完成時間', '區域', '施工廠商', '是否為里程碑']
+    
     if not df.empty:
         df = df.rename(columns={
-            'task_name': '工作項目',
-            'start_date': '開始時間',
-            'end_date': '完成時間',
-            'region': '區域',
-            'subcontractor': '施工廠商',
-            'is_milestone': '是否為里程碑'
+            'task_name': '工作項目', 'start_date': '開始時間',
+            'end_date': '完成時間', 'region': '區域',
+            'subcontractor': '施工廠商', 'is_milestone': '是否為里程碑'
         })
-        df['開始時間'] = pd.to_datetime(df['開始時間'])
-        df['完成時間'] = pd.to_datetime(df['完成時間'])
-        cols = ['工作項目', '開始時間', '完成時間', '區域', '施工廠商', '是否為里程碑']
+        # 🛡️ 關鍵：對齊日期格式為 datetime.date
+        df['開始時間'] = pd.to_datetime(df['開始時間']).dt.date
+        df['完成時間'] = pd.to_datetime(df['完成時間']).dt.date
+        df['是否為里程碑'] = df['是否為里程碑'].fillna(False).astype(bool)
         return df[cols]
-    return pd.DataFrame(columns=['工作項目', '開始時間', '完成時間', '區域', '施工廠商', '是否為里程碑'])
+    
+    empty_df = pd.DataFrame(columns=cols)
+    empty_df['是否為里程碑'] = empty_df['是否為里程碑'].astype(bool)
+    return empty_df
 
 def load_list(table_name):
     res = supabase.table(table_name).select("name").execute()
@@ -45,8 +49,7 @@ def load_project_name():
     try:
         res = supabase.table("project_config").select("project_name").eq("id", 1).execute()
         return res.data[0]['project_name'] if res.data else "新工程案"
-    except:
-        return "新工程案"
+    except: return "新工程案"
 
 # ==========================================
 # 3. 初始化設定
@@ -77,308 +80,184 @@ if new_proj_name != st.session_state.project_name:
 st.sidebar.header("⚙️ 基礎資料管理")
 
 with st.sidebar.expander("📍 區域管理", expanded=False):
-    tab_reg_add, tab_reg_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
-    with tab_reg_add:
-        new_reg = st.text_input("新增區域名稱", key="new_reg_input")
-        if st.button("加入區域", use_container_width=True):
-            if new_reg and new_reg not in st.session_state.regions:
-                supabase.table("regions").insert({"name": new_reg}).execute()
-                st.session_state.regions.append(new_reg)
-                st.toast(f"✅ 區域「{new_reg}」已新增！", icon="📍")
+    t1, t2 = st.tabs(["➕ 新增", "🗑️ 刪除"])
+    with t1:
+        nr = st.text_input("新增區域", key="nr_in")
+        if st.button("加入區域"):
+            if nr and nr not in st.session_state.regions:
+                supabase.table("regions").insert({"name": nr}).execute()
+                st.session_state.regions.append(nr)
                 st.rerun()
-    with tab_reg_del:
-        del_reg = st.selectbox("選擇要刪除的區域", st.session_state.regions, key="del_reg_sel")
-        if st.button("刪除區域", type="primary", use_container_width=True):
-            if (st.session_state.tasks['區域'] == del_reg).any():
-                st.error(f"⚠️ 無法刪除！該區域尚有任務。")
-            else:
-                supabase.table("regions").delete().eq("name", del_reg).execute()
-                st.session_state.regions.remove(del_reg)
+    with t2:
+        dr = st.selectbox("選擇刪除區域", st.session_state.regions)
+        if st.button("刪除區域"):
+            if not (st.session_state.tasks['區域'] == dr).any():
+                supabase.table("regions").delete().eq("name", dr).execute()
+                st.session_state.regions.remove(dr)
                 st.rerun()
+            else: st.error("尚有任務使用此區域")
 
 with st.sidebar.expander("👷 廠商管理", expanded=False):
-    tab_sub_add, tab_sub_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
-    with tab_sub_add:
-        new_sub = st.text_input("新增廠商名稱", key="new_sub_input")
-        if st.button("加入廠商", use_container_width=True):
-            if new_sub and new_sub not in st.session_state.subcontractors:
-                supabase.table("subcontractors").insert({"name": new_sub}).execute()
-                st.session_state.subcontractors.append(new_sub)
-                st.toast(f"✅ 廠商「{new_sub}」已新增！", icon="👷")
+    t3, t4 = st.tabs(["➕ 新增", "🗑️ 刪除"])
+    with t3:
+        ns = st.text_input("新增廠商", key="ns_in")
+        if st.button("加入廠商"):
+            if ns and ns not in st.session_state.subcontractors:
+                supabase.table("subcontractors").insert({"name": ns}).execute()
+                st.session_state.subcontractors.append(ns)
                 st.rerun()
-    with tab_sub_del:
-        del_sub = st.selectbox("選擇要刪除的廠商", st.session_state.subcontractors, key="del_sub_sel")
-        if st.button("刪除廠商", type="primary", use_container_width=True):
-            if (st.session_state.tasks['施工廠商'] == del_sub).any():
-                st.error(f"⚠️ 無法刪除！該廠商尚有任務。")
-            else:
-                supabase.table("subcontractors").delete().eq("name", del_sub).execute()
-                st.session_state.subcontractors.remove(del_sub)
+    with t4:
+        ds = st.selectbox("選擇刪除廠商", st.session_state.subcontractors)
+        if st.button("刪除廠商"):
+            if not (st.session_state.tasks['施工廠商'] == ds).any():
+                supabase.table("subcontractors").delete().eq("name", ds).execute()
+                st.session_state.subcontractors.remove(ds)
                 st.rerun()
+            else: st.error("尚有任務使用此廠商")
 
 # ==========================================
 # 5. 新增工作項目
 # ==========================================
 st.sidebar.divider()
 st.sidebar.header("➕ 新增工作項目")
-with st.sidebar.form("add_task_form"):
-    t_name = st.text_input("項目名稱")
-    c_reg = st.selectbox("歸屬區域", st.session_state.regions)
-    c_sub = st.selectbox("負責廠商", st.session_state.subcontractors)
-    col1, col2 = st.columns(2)
-    s_d = col1.date_input("開始日期")
-    e_d = col2.date_input("結束日期")
-    is_m = st.checkbox("設為里程碑")
+with st.sidebar.form("add_form"):
+    tn = st.text_input("項目名稱")
+    rg = st.selectbox("歸屬區域", st.session_state.regions)
+    sc = st.selectbox("負責廠商", st.session_state.subcontractors)
+    c1, c2 = st.columns(2)
+    sd = c1.date_input("開始")
+    ed = c2.date_input("結束")
+    im = st.checkbox("里程碑")
     if st.form_submit_button("確認新增"):
-        if t_name:
-            new_task = {
-                "task_name": t_name, "start_date": s_d.isoformat(),
-                "end_date": s_d.isoformat() if is_m else e_d.isoformat(),
-                "region": c_reg, "subcontractor": c_sub, "is_milestone": is_m
-            }
-            supabase.table("tasks").insert(new_task).execute()
+        if tn:
+            supabase.table("tasks").insert({
+                "task_name": tn, "start_date": sd.isoformat(),
+                "end_date": sd.isoformat() if im else ed.isoformat(),
+                "region": rg, "subcontractor": sc, "is_milestone": im
+            }).execute()
             st.session_state.tasks = load_data()
             st.rerun()
 
 # ==========================================
-# 6. 主畫面表格與【自動下拉選單】驗證邏輯
+# 6. 主畫面表格與【嚴格驗證】邏輯
 # ==========================================
 st.subheader("📋 工程任務清單")
 
-# 💡 定義欄位配置：將「區域」與「施工廠商」設定為下拉選單
+# 設置表格下拉選單
 col_cfg = {
-    "區域": st.column_config.SelectboxColumn(
-        "區域",
-        help="請選擇工程所屬區域",
-        width="medium",
-        options=st.session_state.regions, # 👈 自動抓取您左側邊欄建立的名單
-        required=True,
-    ),
-    "施工廠商": st.column_config.SelectboxColumn(
-        "施工廠商",
-        help="請選擇負責廠商",
-        width="medium",
-        options=st.session_state.subcontractors, # 👈 自動抓取您左側邊欄建立的名單
-        required=True,
-    ),
+    "區域": st.column_config.SelectboxColumn("區域", options=st.session_state.regions, required=True),
+    "施工廠商": st.column_config.SelectboxColumn("施工廠商", options=st.session_state.subcontractors, required=True),
     "開始時間": st.column_config.DateColumn("開始時間", required=True),
     "完成時間": st.column_config.DateColumn("完成時間", required=True),
     "是否為里程碑": st.column_config.CheckboxColumn("里程碑？", default=False)
 }
 
-# 使用 column_config 啟動下拉選單
 edited_df = st.data_editor(
-    st.session_state.tasks, 
-    column_config=col_cfg, # 👈 帶入配置
-    num_rows="dynamic", 
-    use_container_width=True,
-    key="main_editor"
+    st.session_state.tasks, column_config=col_cfg,
+    num_rows="dynamic", use_container_width=True, key="main_editor"
 )
 
-# --- 存檔驗證邏輯 (維持剛才的嚴格驗證) ---
+# 儲存與同步邏輯
 if not edited_df.equals(st.session_state.tasks):
+    # 1. 濾掉空白列
     clean_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
     
-    # 驗證檢查
-    invalid_rows = []
-    for index, row in clean_df.iterrows():
-        reg_val = str(row['區域'])
-        sub_val = str(row['施工廠商'])
-        if reg_val not in st.session_state.regions or sub_val not in st.session_state.subcontractors:
-            invalid_rows.append(f"第 {index+1} 列資料不合法")
-
-    if invalid_rows:
-        st.error("🚫 發現非預期名稱，已攔截同步。請確保使用選單內的名稱。")
+    # 2. 嚴格驗證
+    invalid = []
+    for i, r in clean_df.iterrows():
+        if str(r['區域']) not in st.session_state.regions or str(r['施工廠商']) not in st.session_state.subcontractors:
+            invalid.append(f"第 {i+1} 列名稱不合法")
+            
+    if invalid:
+        st.error(f"🚫 同步攔截：{', '.join(invalid)}")
     elif edited_df.empty and not st.session_state.tasks.empty:
-        st.warning("⚠️ 檢測到清空操作，已攔截。")
+        st.warning("⚠️ 防止意外全刪，自動同步已關閉")
     else:
         try:
-            upload_list = []
-            for _, row in clean_df.iterrows():
-                upload_list.append({
-                    "task_name": str(row['工作項目']),
-                    "start_date": row['開始時間'].isoformat() if hasattr(row['開始時間'], 'isoformat') else str(row['開始時間']),
-                    "end_date": row['完成時間'].isoformat() if hasattr(row['完成時間'], 'isoformat') else str(row['完成時間']),
-                    "region": str(row['區域']),
-                    "subcontractor": str(row['施工廠商']),
-                    "is_milestone": bool(row['是否為里程碑'])
+            upload = []
+            for _, r in clean_df.iterrows():
+                upload.append({
+                    "task_name": str(r['工作項目']),
+                    "start_date": r['開始時間'].isoformat() if hasattr(r['開始時間'], 'isoformat') else str(r['開始時間']),
+                    "end_date": r['完成時間'].isoformat() if hasattr(r['完成時間'], 'isoformat') else str(r['完成時間']),
+                    "region": str(r['區域']), "subcontractor": str(r['施工廠商']),
+                    "is_milestone": bool(r['是否為里程碑'])
                 })
-            
             supabase.table("tasks").delete().neq("id", -1).execute()
-            if upload_list:
-                supabase.table("tasks").insert(upload_list).execute()
+            if upload: supabase.table("tasks").insert(upload).execute()
             st.session_state.tasks = edited_df
-            st.toast("💾 資料同步成功", icon="☁️")
-        except Exception as e:
-            st.error(f"同步失敗：{e}")
+            st.toast("💾 同步成功")
+        except Exception as e: st.error(f"同步失敗：{e}")
 
 # ==========================================
-# 7. 多維度甘特圖生成 (先過濾後轉換版)
+# 7. 多維度甘特圖生成
 # ==========================================
 st.divider()
-col_ctrl1, col_ctrl2 = st.columns([1, 2])
-group_target = col_ctrl1.radio("📊 圖表分類維度：", ["依區域", "依施工廠商"], horizontal=True)
+target = st.radio("📊 分類維度：", ["依區域", "依施工廠商"], horizontal=True)
 
 if st.button("🌟 生成互動式甘特圖", type="primary"):
-    # 1. 抓取當前表格的所有內容
-    df_raw = edited_df.copy()
-    
-    if not df_raw.empty:
-        # 🚀 關鍵修正 A：【先過濾】掉還沒填完的空白列
-        # 只要「工作項目」、「開始時間」、「完成時間」其中一個沒填，就不參與繪圖
-        plot_df = df_raw.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
-        
-        # 檢查過濾後是否還有資料
-        if plot_df.empty:
-            st.warning("⚠️ 請確認表格中已填入完整的項目名稱與日期。")
-        else:
-            try:
-                # 🚀 關鍵修正 B：【後轉換】對乾淨的資料進行日期轉換
-                plot_df['開始時間'] = pd.to_datetime(plot_df['開始時間'])
-                plot_df['完成時間'] = pd.to_datetime(plot_df['完成時間'])
-                
-                # 2. 數據預處理
-                color_col = "區域" if group_target == "依區域" else "施工廠商"
-                plot_df['是否為里程碑'] = plot_df['是否為里程碑'].fillna(False).astype(bool)
-                plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
-                
-                # 3. 排序：全體依開始日期排序
-                plot_df = plot_df.sort_values(by="開始時間", ascending=True)
-                sorted_task_order = plot_df['工作項目'].tolist()
-                
-                # 4. 建立顏色表
-                all_unique_vals = plot_df[color_col].unique()
-                color_seq = px.colors.qualitative.Plotly
-                color_map = {val: color_seq[i % len(color_seq)] for i, val in enumerate(all_unique_vals)}
+    p_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
+    if not p_df.empty:
+        try:
+            p_df['開始時間'] = pd.to_datetime(p_df['開始時間'])
+            p_df['完成時間'] = pd.to_datetime(p_df['完成時間'])
+            color_col = "區域" if target == "依區域" else "施工廠商"
+            p_df['是否為里程碑'] = p_df['是否為里程碑'].fillna(False).astype(bool)
+            p_df['繪圖結束'] = p_df['完成時間'] + pd.Timedelta(days=1)
+            p_df = p_df.sort_values("開始時間")
+            
+            color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
+            
+            fig = px.timeline(p_df[~p_df['是否為里程碑']], x_start="開始時間", x_end="繪圖結束", y="工作項目", 
+                              color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
+            
+            # 里程碑星星
+            leg_set = set(p_df[~p_df['是否為里程碑']][color_col].unique())
+            for _, m in p_df[p_df['是否為里程碑']].iterrows():
+                show_leg = m[color_col] not in leg_set
+                if show_leg: leg_set.add(m[color_col])
+                fig.add_trace(go.Scatter(x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
+                    marker=dict(symbol='star', size=15, color=color_map.get(m[color_col])),
+                    text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right',
+                    name=m[color_col], legendgroup=m[color_col], showlegend=show_leg))
+            
+            fig.update_yaxes(categoryorder='array', categoryarray=p_df['工作項目'].tolist(), autorange="reversed")
+            fig.update_layout(font=dict(color="black"), plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3")
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e: st.error(f"繪圖錯誤：{e}")
 
-                # 5. 繪製長條圖 (一般任務)
-                tasks_only = plot_df[~plot_df['是否為里程碑']]
-                fig = px.timeline(
-                    tasks_only, x_start="開始時間", x_end="繪圖結束", y="工作項目", 
-                    color=color_col, color_discrete_map=color_map,
-                    height=400 + len(plot_df)*30
-                )
-
-                # 6. 處理里程碑 (星星)
-                categories_in_legend = set(tasks_only[color_col].unique())
-                ms_df = plot_df[plot_df['是否為里程碑']]
-                for _, m in ms_df.iterrows():
-                    curr_cat = m[color_col]
-                    show_leg = curr_cat not in categories_in_legend
-                    if show_leg: categories_in_legend.add(curr_cat)
-
-                    fig.add_trace(go.Scatter(
-                        x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
-                        marker=dict(symbol='star', size=20, color=color_map.get(curr_cat, 'gray'), line=dict(color='black', width=1)),
-                        text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right',
-                        textfont=dict(color='black', size=14), name=curr_cat, 
-                        legendgroup=curr_cat, showlegend=show_leg
-                    ))
-
-                # 7. 今日線
-                try:
-                    today = pd.Timestamp.now(tz='Asia/Taipei')
-                except:
-                    today = pd.Timestamp.now()
-                fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
-
-                # 8. 強制 Y 軸順序與樣式
-                fig.update_yaxes(categoryorder='array', categoryarray=sorted_task_order, autorange="reversed")
-                fig.update_layout(
-                    title=dict(text=f"{st.session_state.project_name} - 進度總表", font=dict(color="black", size=20)),
-                    font=dict(color="black"),
-                    plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3",
-                    xaxis=dict(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black")),
-                    yaxis=dict(showgrid=True, gridcolor='black', tickfont=dict(color="black")),
-                    margin=dict(l=20, r=20, t=60, b=20)
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-            except Exception as e:
-                st.error(f"繪圖數據轉換失敗：{e}")
-                st.info("💡 請確認日期欄位是否填寫正確，或嘗試重新整理網頁。")
 # ==========================================
-# 8. 系統備份與回復功能 (新增刪除備份功能)
+# 8. 系統備份與回復
 # ==========================================
 st.sidebar.divider()
-st.sidebar.header("💾 系統備份與回復")
-
-with st.sidebar.expander("🛠️ 資料備份工具"):
-    # 1. 本地 CSV 備份
+with st.sidebar.expander("💾 備份與回復"):
     csv = st.session_state.tasks.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 下載目前資料為 CSV",
-        data=csv,
-        file_name=f"工程備份_{pd.Timestamp.now().strftime('%m%d_%H%M')}.csv",
-        mime='text/csv',
-        use_container_width=True
-    )
-
-    st.divider()
-
-    # 2. 雲端快照備份
-    b_name = st.text_input("備份名稱", placeholder="例如：開工前存檔", key="backup_name_input")
-    if st.button("🚀 建立雲端儲存點", use_container_width=True):
-        try:
-            json_data = st.session_state.tasks.to_json(orient='records', date_format='iso')
-            supabase.table("tasks_backups").insert({
-                "backup_name": b_name if b_name else "未命名備份",
-                "data_json": json_data
-            }).execute()
-            st.toast("✅ 雲端備份成功！", icon="💾")
-            st.rerun()
-        except Exception as e:
-            st.error(f"備份失敗：{e}")
-
-    st.divider()
-
-    # 3. 雲端回復與刪除資料
-    st.subheader("⚠️ 管理儲存點")
-    res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
+    st.download_button("📥 下載 CSV", data=csv, file_name="backup.csv", use_container_width=True)
     
+    bn = st.text_input("備份名稱", key="bn_in")
+    if st.button("🚀 建立雲端備份", use_container_width=True):
+        js = st.session_state.tasks.to_json(orient='records', date_format='iso')
+        supabase.table("tasks_backups").insert({"backup_name": bn, "data_json": js}).execute()
+        st.toast("備份成功")
+        st.rerun()
+
+    res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
     if res_b.data:
-        # 建立選項清單
-        b_options = {f"{item['backup_time'][5:16]} - {item['backup_name']}": item['id'] for item in res_b.data}
-        selected_b = st.selectbox("選擇儲存點", options=list(b_options.keys()))
-        target_id = b_options[selected_b]
-
-        # 放置兩個按鈕：一個回復，一個刪除
-        col_btn1, col_btn2 = st.columns(2)
-        
-        # --- 按鈕 A：回復資料 ---
-        if col_btn1.button("🔥 回復", type="secondary", use_container_width=True):
-            try:
-                snapshot = supabase.table("tasks_backups").select("data_json").eq("id", target_id).execute()
-                json_str = snapshot.data[0]['data_json']
-                restored_df = pd.read_json(io.StringIO(json_str))
-                
-                if not restored_df.empty:
-                    supabase.table("tasks").delete().neq("id", -1).execute()
-                    new_upload = []
-                    for _, row in restored_df.iterrows():
-                        new_upload.append({
-                            "task_name": str(row['工作項目']),
-                            "start_date": pd.to_datetime(row['開始時間']).isoformat(),
-                            "end_date": pd.to_datetime(row['完成時間']).isoformat(),
-                            "region": row['區域'],
-                            "subcontractor": row['施工廠商'],
-                            "is_milestone": bool(row['是否為里程碑'])
-                        })
-                    if new_upload:
-                        supabase.table("tasks").insert(new_upload).execute()
-                    st.session_state.tasks = load_data()
-                    st.toast("✅ 資料已恢復至該儲存點", icon="🔄")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"回復失敗：{e}")
-
-        # --- 按鈕 B：刪除備份點 ---
-        if col_btn2.button("🗑️ 刪除", type="primary", use_container_width=True):
-            try:
-                supabase.table("tasks_backups").delete().eq("id", target_id).execute()
-                st.toast(f"已移除儲存點：{selected_b}", icon="🗑️")
-                st.rerun() # 重新整理以更新下拉選單
-            except Exception as e:
-                st.error(f"刪除備份失敗：{e}")
-    else:
-        st.info("尚無雲端備份紀錄")
+        opts = {f"{i['backup_time'][5:16]} - {i['backup_name']}": i['id'] for i in res_b.data}
+        sel_b = st.selectbox("選擇儲存點", options=list(opts.keys()))
+        c1, c2 = st.columns(2)
+        if c1.button("🔥 回復", use_container_width=True):
+            snap = supabase.table("tasks_backups").select("data_json").eq("id", opts[sel_b]).execute()
+            r_df = pd.read_json(io.StringIO(snap.data[0]['data_json']))
+            supabase.table("tasks").delete().neq("id", -1).execute()
+            up = []
+            for _, r in r_df.iterrows():
+                up.append({"task_name": str(r['工作項目']), "start_date": pd.to_datetime(r['開始時間']).isoformat(),
+                           "end_date": pd.to_datetime(r['完成時間']).isoformat(), "region": r['區域'],
+                           "subcontractor": r['施工廠商'], "is_milestone": bool(r['是否為里程碑'])})
+            if up: supabase.table("tasks").insert(up).execute()
+            st.session_state.tasks = load_data()
+            st.rerun()
+        if c2.button("🗑️ 刪除", use_container_width=True):
+            supabase.table("tasks_backups").delete().eq("id", opts[sel_b]).execute()
+            st.rerun()
