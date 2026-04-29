@@ -141,52 +141,72 @@ with st.sidebar.form("add_task_form"):
             st.rerun()
 
 # ==========================================
-# 6. 主畫面表格與安全同步邏輯
+# 6. 主畫面表格與【嚴格驗證】存檔邏輯
 # ==========================================
 st.subheader("📋 工程任務清單")
-edited_df = st.data_editor(st.session_state.tasks, num_rows="dynamic", use_container_width=True, key="main_editor")
+edited_df = st.data_editor(
+    st.session_state.tasks, 
+    num_rows="dynamic", 
+    use_container_width=True,
+    key="main_editor"
+)
 
 if not edited_df.equals(st.session_state.tasks):
-    # 🛡️ 增加保護鎖：如果編輯後的表格是空的，但不該是空的，攔截同步（防止意外全刪）
-    if edited_df.empty and not st.session_state.tasks.empty:
-        st.warning("⚠️ 檢測到清空表格操作，自動同步已攔截。如欲清空請手動刪除每一列或建立備份。")
+    # --- A. 數據初步清洗 ---
+    # 濾掉還沒填完標題或日期的列 (這些不列入驗證範圍)
+    clean_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
+    
+    # --- B. 嚴格驗證檢查 ---
+    # 找出所有不在名單內的名稱
+    invalid_rows = []
+    for index, row in clean_df.iterrows():
+        reg_val = str(row['區域'])
+        sub_val = str(row['施工廠商'])
+        
+        errors = []
+        if reg_val not in st.session_state.regions:
+            errors.append(f"區域「{reg_val}」不在名單內")
+        if sub_val not in st.session_state.subcontractors:
+            errors.append(f"廠商「{sub_val}」不在名單內")
+            
+        if errors:
+            invalid_rows.append(f"第 {index+1} 列：{'、'.join(errors)}")
+
+    # --- C. 判斷是否准予儲存 ---
+    if invalid_rows:
+        # ❌ 發現錯誤：跳出報錯訊息，拒絕執行資料庫同步
+        st.error("🚫 儲存失敗！發現非預期名稱：")
+        for err in invalid_rows:
+            st.write(f"• {err}")
+        st.info("💡 請從下拉選單選擇正確的名稱，或先在左側邊欄新增該區域/廠商。")
+        
+    elif edited_df.empty and not st.session_state.tasks.empty:
+        # 🛡️ 保護鎖：防止意外全刪
+        st.warning("⚠️ 檢測到清空表格操作，自動同步已攔截。")
+        
     else:
+        # ✅ 通過驗證：執行資料庫同步
         try:
-            # 1. 濾掉未填寫完整的列
-            clean_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
-            
-            default_reg = st.session_state.regions[0] if st.session_state.regions else "未設定"
-            default_sub = st.session_state.subcontractors[0] if st.session_state.subcontractors else "未設定"
-            
             upload_list = []
             for _, row in clean_df.iterrows():
-                val_reg = str(row['區域']) if pd.notna(row['區域']) else ""
-                val_sub = str(row['施工廠商']) if pd.notna(row['施工廠商']) else ""
-                
-                # 區域/廠商防呆
-                final_reg = val_reg if val_reg in st.session_state.regions else default_reg
-                final_sub = val_sub if val_sub in st.session_state.subcontractors else default_sub
-                
                 upload_list.append({
                     "task_name": str(row['工作項目']),
                     "start_date": row['開始時間'].isoformat() if hasattr(row['開始時間'], 'isoformat') else str(row['開始時間']),
                     "end_date": row['完成時間'].isoformat() if hasattr(row['完成時間'], 'isoformat') else str(row['完成時間']),
-                    "region": final_reg,
-                    "subcontractor": final_sub,
+                    "region": str(row['區域']),
+                    "subcontractor": str(row['施工廠商']),
                     "is_milestone": bool(row['是否為里程碑'])
                 })
-                
-            # 2. 執行資料庫同步 (僅當有內容或確定要變更時)
-            # 我們這裡先刪除再新增，這就是為什麼保護鎖很重要的原因
+            
+            # 只有在資料正確時才執行刪除與新增
             supabase.table("tasks").delete().neq("id", -1).execute()
             if upload_list:
                 supabase.table("tasks").insert(upload_list).execute()
-                
+            
             st.session_state.tasks = edited_df
-            st.toast("💾 資料庫已同步", icon="☁️")
+            st.toast("💾 資料庫已同步成功", icon="☁️")
         except Exception as e:
-            st.error(f"同步失敗：{e}")
-
+            st.error(f"資料庫寫入失敗：{e}")
 # ==========================================
 # 7. 甘特圖生成 (全項目日期排序版)
 # ==========================================
