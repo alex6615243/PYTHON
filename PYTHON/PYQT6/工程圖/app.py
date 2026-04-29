@@ -249,7 +249,7 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
         st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 8. 系統備份與回復功能
+# 8. 系統備份與回復功能 (新增刪除備份功能)
 # ==========================================
 st.sidebar.divider()
 st.sidebar.header("💾 系統備份與回復")
@@ -283,28 +283,28 @@ with st.sidebar.expander("🛠️ 資料備份工具"):
 
     st.divider()
 
-    # 3. 雲端回復資料
-    st.subheader("⚠️ 從備份回復")
+    # 3. 雲端回復與刪除資料
+    st.subheader("⚠️ 管理儲存點")
     res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
     
     if res_b.data:
+        # 建立選項清單
         b_options = {f"{item['backup_time'][5:16]} - {item['backup_name']}": item['id'] for item in res_b.data}
         selected_b = st.selectbox("選擇儲存點", options=list(b_options.keys()))
+        target_id = b_options[selected_b]
+
+        # 放置兩個按鈕：一個回復，一個刪除
+        col_btn1, col_btn2 = st.columns(2)
         
-        # 💡 將按鈕放入 if res_b.data 區塊內，確保 selected_b 存在
-        if st.button("🔥 確認回復資料", type="secondary", use_container_width=True):
+        # --- 按鈕 A：回復資料 ---
+        if col_btn1.button("🔥 回復", type="secondary", use_container_width=True):
             try:
-                target_id = b_options[selected_b]
                 snapshot = supabase.table("tasks_backups").select("data_json").eq("id", target_id).execute()
-                
                 json_str = snapshot.data[0]['data_json']
                 restored_df = pd.read_json(io.StringIO(json_str))
                 
                 if not restored_df.empty:
-                    # 先清空目前主表
                     supabase.table("tasks").delete().neq("id", -1).execute()
-                    
-                    # 重新寫入備份內容
                     new_upload = []
                     for _, row in restored_df.iterrows():
                         new_upload.append({
@@ -315,14 +315,21 @@ with st.sidebar.expander("🛠️ 資料備份工具"):
                             "subcontractor": row['施工廠商'],
                             "is_milestone": bool(row['是否為里程碑'])
                         })
-                    
                     if new_upload:
                         supabase.table("tasks").insert(new_upload).execute()
-                    
                     st.session_state.tasks = load_data()
-                    st.success("✅ 資料回復成功！")
+                    st.toast("✅ 資料已恢復至該儲存點", icon="🔄")
                     st.rerun()
             except Exception as e:
                 st.error(f"回復失敗：{e}")
+
+        # --- 按鈕 B：刪除備份點 ---
+        if col_btn2.button("🗑️ 刪除", type="primary", use_container_width=True):
+            try:
+                supabase.table("tasks_backups").delete().eq("id", target_id).execute()
+                st.toast(f"已移除儲存點：{selected_b}", icon="🗑️")
+                st.rerun() # 重新整理以更新下拉選單
+            except Exception as e:
+                st.error(f"刪除備份失敗：{e}")
     else:
         st.info("尚無雲端備份紀錄")
