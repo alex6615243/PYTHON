@@ -44,7 +44,7 @@ def load_list(table_name):
 # ==========================================
 # 3. 初始化設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="營建工程多維度規劃系統")
+st.set_page_config(layout="wide", page_title="營建工程規劃系統")
 
 if 'tasks' not in st.session_state:
     st.session_state.tasks = load_data()
@@ -53,7 +53,7 @@ if 'regions' not in st.session_state:
 if 'subcontractors' not in st.session_state:
     st.session_state.subcontractors = load_list("subcontractors")
 
-st.title("🏢 營建工程進度規劃系統 (多維度版)")
+st.title("🏢 營建工程進度規劃系統")
 
 # ==========================================
 # 4. 側邊欄：區域與廠商管理
