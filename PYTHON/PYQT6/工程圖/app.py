@@ -141,13 +141,14 @@ if not edited_df.equals(st.session_state.tasks):
         st.error(f"❌ 同步失敗！錯誤訊息：{str(e)}")
         st.info("提示：這通常是 Supabase 的 RLS 權限阻擋，請到 Supabase 後台關閉 RLS 或設定 Insert/Delete Policy。")
 
-# 7. 繪製甘特圖 (修正格線與日期格式)
+# ==========================================
+# 7. 繪製甘特圖 (含今日線、格線與日期格式)
 # ==========================================
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
         plot_df = df.copy()
-        # 為了讓最後一天的長條圖顯示完整，繪圖結束時間加 1 天
+        # 確保長條圖涵蓋完整結束日
         plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
         unique_regions = df['區域'].unique()
@@ -184,7 +185,26 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                 showlegend=False
             ))
 
-        # 💡 重點修正區：設定格線與日期格式
+        # 💡 新增：計算今天日期（指定台北時區）
+        # 注意：需確保環境有安裝 pytz (pip install pytz)
+        try:
+            today = pd.Timestamp.now(tz='Asia/Taipei')
+        except:
+            today = pd.Timestamp.now() # 若無時區設定則使用系統時間
+
+        # 💡 新增：在圖表上畫出「今日」垂直線
+        fig.add_vline(
+            x=today, 
+            line_width=2, 
+            line_dash="dash", 
+            line_color="red",
+            annotation_text="今日", 
+            annotation_position="top left",
+            annotation_font_color="red",
+            layer="above" # 確保線條在長條圖上方
+        )
+
+        # 設定格線與日期格式
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
             xaxis_title="日期",
@@ -192,14 +212,12 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             hovermode="closest",
             plot_bgcolor="#d3d3d3",   # 灰色背景
             paper_bgcolor="#d3d3d3",  # 灰色背景
-            # 設定 X 軸：顯示白色格線，並強制日期格式為 月/日
             xaxis=dict(
                 showgrid=True, 
                 gridcolor='white', 
-                tickformat="%m/%d",  # ⬅️ 這裡修正日期顯示格式
-                dtick="D1"           # 如果希望每天都有格線，可以加上這行
+                tickformat="%m/%d",   # 修正日期顯示格式為 月/日
+                dtick="D1"            # 每一天顯示一條格線
             ),
-            # 設定 Y 軸：顯示白色橫向格線
             yaxis=dict(
                 showgrid=True, 
                 gridcolor='white'
