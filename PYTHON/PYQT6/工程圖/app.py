@@ -214,23 +214,24 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             xshift=5           # 稍微往右平移 5px 避免壓到線
         )
 
-        # 設定格線與日期格式
+        # 設定格線與日期格式 (改為黑色格線與黑色文字)
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
+            font=dict(color="black"), # 💡 新增：將圖表內所有文字（X軸、Y軸、標籤）統一改為黑色
             xaxis_title="日期",
             yaxis_title="工作項目",
             hovermode="closest",
-            plot_bgcolor="#d3d3d3",   
-            paper_bgcolor="#d3d3d3",  
+            plot_bgcolor="#d3d3d3",   # 保持灰色背景
+            paper_bgcolor="#d3d3d3",  # 保持灰色背景
             xaxis=dict(
                 showgrid=True, 
-                gridcolor='white', 
+                gridcolor='black',    # 💡 修改：X 軸垂直格線改為黑色
                 tickformat="%m/%d",   
                 dtick="D1"            
             ),
             yaxis=dict(
                 showgrid=True, 
-                gridcolor='white'
+                gridcolor='black'     # 💡 修改：Y 軸水平格線改為黑色
             ),
             margin=dict(l=20, r=20, t=60, b=20)
         )
