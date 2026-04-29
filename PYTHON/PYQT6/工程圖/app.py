@@ -124,10 +124,34 @@ edited_df = st.data_editor(
 )
 
 # 偵測變動並立即寫入 CSV
+# 修改後的自動存檔邏輯
 if not edited_df.equals(st.session_state.tasks):
-    st.session_state.tasks = edited_df
-    st.session_state.tasks.to_csv(SAVE_FILE, index=False)
-    st.toast("✅ 資料已同步至雲端存檔", icon="💾")
+    try:
+        # 1. 嘗試執行刪除
+        res_del = supabase.table("tasks").delete().neq("id", -1).execute()
+        
+        # 2. 準備上傳清單
+        upload_list = []
+        for _, row in edited_df.iterrows():
+            upload_list.append({
+                "task_name": str(row['工作項目']),
+                "start_date": row['開始時間'].isoformat(),
+                "end_date": row['完成時間'].isoformat(),
+                "region": row['區域'],
+                "is_milestone": bool(row['是否為里程碑'])
+            })
+        
+        if upload_list:
+            # 3. 嘗試執行寫入並抓取回傳
+            res_ins = supabase.table("tasks").insert(upload_list).execute()
+            
+        st.session_state.tasks = edited_df
+        st.toast("💾 資料庫同步成功", icon="☁️")
+        
+    except Exception as e:
+        # 如果失敗，直接把錯誤訊息噴在畫面上
+        st.error(f"❌ 同步失敗！錯誤訊息：{str(e)}")
+        st.info("提示：請檢查 Supabase 的 RLS Policy 是否已開啟 Insert 權限。")
 
 # ==========================================
 # 繪圖區
