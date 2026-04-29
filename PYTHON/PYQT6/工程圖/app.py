@@ -142,13 +142,12 @@ if not edited_df.equals(st.session_state.tasks):
         st.info("提示：這通常是 Supabase 的 RLS 權限阻擋，請到 Supabase 後台關閉 RLS 或設定 Insert/Delete Policy。")
 
 # ==========================================
-# 7. 繪製甘特圖 (修復 Plotly 時間戳記 Bug 版)
+# 7. 繪製甘特圖 (強制黑色文字與格線版)
 # ==========================================
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
         plot_df = df.copy()
-        # 確保長條圖涵蓋完整結束日
         plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
         unique_regions = df['區域'].unique()
@@ -162,7 +161,6 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
             y="工作項目", 
             color="區域",
             color_discrete_map=color_map,
-            title=f"{st.session_state.project_name} - 進度總表",
             height=400 + len(df)*30
         )
 
@@ -180,58 +178,62 @@ if st.button("🌟 生成互動式甘特圖", type="primary"):
                 ),
                 text=[f" {m['開始時間'].strftime('%m/%d')}"], 
                 textposition='middle right', 
+                textfont=dict(color='black', size=14), # 💡 強制里程碑文字為黑色
                 name=m['區域'], 
                 legendgroup=m['區域'], 
                 showlegend=False
             ))
 
-        # 取得今天日期
+        # 取得今天日期並畫線
         try:
             today = pd.Timestamp.now(tz='Asia/Taipei')
         except:
             today = pd.Timestamp.now()
 
-        # 💡 解法核心：將畫線與文字分開，避開 Plotly 底層 Bug
-        # 1. 單純畫紅色虛線
         fig.add_vline(
-            x=today, 
-            line_width=2, 
-            line_dash="dash", 
-            line_color="red",
-            layer="above"
+            x=today, line_width=2, line_dash="dash", line_color="red", layer="above"
         )
         
-        # 2. 獨立加上「今日」文字註解
         fig.add_annotation(
-            x=today,
-            y=1,               # 定位在 Y 軸最頂端
-            yref="paper",      # 鎖定圖表外框比例，不會受任務數量影響
-            yanchor="bottom",  # 文字的底部貼齊頂端
-            text="今日",
-            showarrow=False,
+            x=today, y=1, yref="paper", yanchor="bottom",
+            text="今日", showarrow=False,
             font=dict(color="red", size=14),
-            xanchor="left",    # 文字靠線的右邊
-            xshift=5           # 稍微往右平移 5px 避免壓到線
+            xanchor="left", xshift=5
         )
 
-        # 設定格線與日期格式 (改為黑色格線與黑色文字)
+        # 💡 重點修正區：強制指定所有標題與刻度的文字為黑色
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
-            font=dict(color="black"), # 💡 新增：將圖表內所有文字（X軸、Y軸、標籤）統一改為黑色
-            xaxis_title="日期",
-            yaxis_title="工作項目",
+            # 1. 主標題設定為黑色
+            title=dict(
+                text=f"{st.session_state.project_name} - 進度總表",
+                font=dict(color="black", size=20)
+            ),
+            # 2. X/Y 軸標題設定為黑色
+            xaxis_title=dict(text="日期", font=dict(color="black", size=14)),
+            yaxis_title=dict(text="工作項目", font=dict(color="black", size=14)),
+            # 3. 基礎版面設定
+            font=dict(color="black"),
             hovermode="closest",
-            plot_bgcolor="#d3d3d3",   # 保持灰色背景
-            paper_bgcolor="#d3d3d3",  # 保持灰色背景
+            plot_bgcolor="#d3d3d3",   
+            paper_bgcolor="#d3d3d3",  
+            # 4. X 軸刻度文字 (日期) 設定為黑色
             xaxis=dict(
                 showgrid=True, 
-                gridcolor='black',    # 💡 修改：X 軸垂直格線改為黑色
+                gridcolor='black', 
                 tickformat="%m/%d",   
-                dtick="D1"            
+                dtick="D1",
+                tickfont=dict(color="black", size=12) # ⬅️ 日期刻度黑字
             ),
+            # 5. Y 軸刻度文字 (工作項目) 設定為黑色
             yaxis=dict(
                 showgrid=True, 
-                gridcolor='black'     # 💡 修改：Y 軸水平格線改為黑色
+                gridcolor='black',
+                tickfont=dict(color="black", size=14) # ⬅️ 項目刻度黑字
+            ),
+            # 6. 圖例 (Legend) 設定為黑色
+            legend=dict(
+                font=dict(color="black")
             ),
             margin=dict(l=20, r=20, t=60, b=20)
         )
