@@ -147,35 +147,64 @@ with st.sidebar.form("add_task_form"):
             st.rerun()
 
 # ==========================================
-# 6. 主畫面表格與自動存檔
+# 6. 主畫面表格與自動存檔 (雙重防呆版：區域 + 廠商)
 # ==========================================
 st.subheader("📋 工程任務清單")
-edited_df = st.data_editor(st.session_state.tasks, num_rows="dynamic", use_container_width=True, key="main_editor")
+edited_df = st.data_editor(
+    st.session_state.tasks, 
+    num_rows="dynamic", 
+    use_container_width=True,
+    key="main_editor"
+)
 
 if not edited_df.equals(st.session_state.tasks):
     try:
+        # 1. 濾掉完全沒填關鍵資訊的列
         clean_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
+        
+        # 2. 💡 動態抓取「當前合法」的預設值
+        # 優先使用名單中的第一項，如果名單是空的，則給予一個警告標籤
         default_reg = st.session_state.regions[0] if st.session_state.regions else "未設定"
         default_sub = st.session_state.subcontractors[0] if st.session_state.subcontractors else "未設定"
         
         upload_list = []
         for _, row in clean_df.iterrows():
+            # 取得原始值
+            val_reg = str(row['區域']) if pd.notna(row['區域']) else ""
+            val_sub = str(row['施工廠商']) if pd.notna(row['施工廠商']) else ""
+            
+            # 🛡️ 區域防呆：如果不在合法名單內或是空的，就強制轉為預設值
+            if val_reg not in st.session_state.regions:
+                final_reg = default_reg
+            else:
+                final_reg = val_reg
+                
+            # 🛡️ 廠商防呆：如果不在合法名單內或是空的，就強制轉為預設值
+            if val_sub not in st.session_state.subcontractors:
+                final_sub = default_sub
+            else:
+                final_sub = val_sub
+            
             upload_list.append({
                 "task_name": str(row['工作項目']),
                 "start_date": row['開始時間'].isoformat() if hasattr(row['開始時間'], 'isoformat') else str(row['開始時間']),
                 "end_date": row['完成時間'].isoformat() if hasattr(row['完成時間'], 'isoformat') else str(row['完成時間']),
-                "region": str(row['區域']) if pd.notna(row['區域']) else default_reg,
-                "subcontractor": str(row['施工廠商']) if pd.notna(row['施工廠商']) else default_sub,
+                "region": final_reg,
+                "subcontractor": final_sub,
                 "is_milestone": bool(row['是否為里程碑'])
             })
-        
+            
+        # 3. 執行資料庫同步
         supabase.table("tasks").delete().neq("id", -1).execute()
         if upload_list:
             supabase.table("tasks").insert(upload_list).execute()
+            
         st.session_state.tasks = edited_df
         st.toast("💾 資料庫已同步", icon="☁️")
+        
     except Exception as e:
         st.error(f"同步失敗：{e}")
+        st.info("💡 提示：請檢查您的區域或廠商名單是否已清空，或者表格中是否有未填寫完整的欄位。")
 
 # ==========================================
 # 7. 多維度甘特圖生成 (修正里程碑圖例失蹤版)
