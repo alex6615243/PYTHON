@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from supabase import create_client, Client
 
 # ==========================================
-# 1. Supabase 初始化連接 (這裡定義了 supabase，絕對不能漏掉！)
+# 1. Supabase 初始化連接
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -13,11 +13,10 @@ def init_connection():
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
-# 這裡把連線物件命名為 supabase，後面的程式才能呼叫它
 supabase = init_connection()
 
 # ==========================================
-# 2. 資料讀寫邏輯
+# 2. 資料讀寫邏輯 (增加施工廠商)
 # ==========================================
 def load_data():
     res = supabase.table("tasks").select("*").execute()
@@ -28,99 +27,99 @@ def load_data():
             'start_date': '開始時間',
             'end_date': '完成時間',
             'region': '區域',
+            'subcontractor': '施工廠商',
             'is_milestone': '是否為里程碑'
         })
         df['開始時間'] = pd.to_datetime(df['開始時間'])
         df['完成時間'] = pd.to_datetime(df['完成時間'])
-        return df[['工作項目', '開始時間', '完成時間', '區域', '是否為里程碑']]
-    return pd.DataFrame(columns=['工作項目', '開始時間', '完成時間', '區域', '是否為里程碑'])
+        # 確保所有欄位都存在
+        cols = ['工作項目', '開始時間', '完成時間', '區域', '施工廠商', '是否為里程碑']
+        return df[cols]
+    return pd.DataFrame(columns=['工作項目', '開始時間', '完成時間', '區域', '施工廠商', '是否為里程碑'])
 
-def load_regions():
-    res = supabase.table("regions").select("name").execute()
-    return [item['name'] for item in res.data] if res.data else ["主區域"]
-
-def load_project_name():
-    res = supabase.table("project_config").select("project_name").eq("id", 1).execute()
-    return res.data[0]['project_name'] if res.data else "未命名工程案"
+def load_list(table_name):
+    res = supabase.table(table_name).select("name").execute()
+    return [item['name'] for item in res.data] if res.data else ["未設定"]
 
 # ==========================================
-# 3. 初始化設定與網頁標題
+# 3. 初始化設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="多區域工程規劃系統")
+st.set_page_config(layout="wide", page_title="營建工程多維度規劃系統")
 
 if 'tasks' not in st.session_state:
     st.session_state.tasks = load_data()
 if 'regions' not in st.session_state:
-    st.session_state.regions = load_regions()
-if 'project_name' not in st.session_state:
-    st.session_state.project_name = load_project_name()
+    st.session_state.regions = load_list("regions")
+if 'subcontractors' not in st.session_state:
+    st.session_state.subcontractors = load_list("subcontractors")
 
-st.title("營建工程進度規劃系統")
-
-current_name = st.text_input("📌 工程案名稱：", value=st.session_state.project_name)
-if current_name != st.session_state.project_name:
-    supabase.table("project_config").upsert({'id': 1, 'project_name': current_name}).execute()
-    st.session_state.project_name = current_name
-    st.toast("✅ 工程名稱已同步", icon="🏗️")
+st.title("🏢 營建工程進度規劃系統 (多維度版)")
 
 # ==========================================
-# 4. 區域管理 (Sidebar)
+# 4. 側邊欄：區域與廠商管理
 # ==========================================
-st.sidebar.header("⚙️ 區域管理")
-new_region = st.sidebar.text_input("新增區域名稱：")
-if st.sidebar.button("➕ 新增區域"):
-    if new_region and new_region not in st.session_state.regions:
-        supabase.table("regions").insert({"name": new_region}).execute()
-        st.session_state.regions.append(new_region)
-        st.sidebar.success(f"已新增：{new_region}")
-        st.rerun()
+st.sidebar.header("⚙️ 基礎資料管理")
 
-region_df = pd.DataFrame(st.session_state.regions, columns=['區域名稱'])
-st.sidebar.data_editor(region_df, use_container_width=True, disabled=True)
+# 區域管理
+with st.sidebar.expander("📍 區域管理"):
+    new_reg = st.text_input("新增區域名稱")
+    if st.button("➕ 加入區域"):
+        if new_reg and new_reg not in st.session_state.regions:
+            supabase.table("regions").insert({"name": new_reg}).execute()
+            st.session_state.regions.append(new_reg)
+            st.rerun()
+
+# 廠商管理 (新增功能)
+with st.sidebar.expander("👷 廠商管理"):
+    new_sub = st.text_input("新增廠商名稱")
+    if st.button("➕ 加入廠商"):
+        if new_sub and new_sub not in st.session_state.subcontractors:
+            supabase.table("subcontractors").insert({"name": new_sub}).execute()
+            st.session_state.subcontractors.append(new_sub)
+            st.rerun()
 
 # ==========================================
-# 5. 新增工作項目 (Sidebar)
+# 5. 新增工作項目
 # ==========================================
 st.sidebar.divider()
-st.sidebar.header("➕ 新增工作")
+st.sidebar.header("➕ 新增工作項目")
 with st.sidebar.form("add_task_form"):
-    sel_reg = st.selectbox("歸屬區域", st.session_state.regions)
     t_name = st.text_input("項目名稱")
-    c1, c2 = st.columns(2)
-    s_d = c1.date_input("開始")
-    e_d = c2.date_input("結束")
-    is_m = st.checkbox("里程碑")
+    c_reg = st.selectbox("歸屬區域", st.session_state.regions)
+    c_sub = st.selectbox("負責廠商", st.session_state.subcontractors)
+    col1, col2 = st.columns(2)
+    s_d = col1.date_input("開始日期")
+    e_d = col2.date_input("結束日期")
+    is_m = st.checkbox("設為里程碑")
     
-    if st.form_submit_button("加入清單"):
+    if st.form_submit_button("確認新增"):
         if t_name:
-            if is_m: e_d = s_d
             new_task = {
                 "task_name": t_name,
                 "start_date": s_d.isoformat(),
-                "end_date": e_d.isoformat(),
-                "region": sel_reg,
+                "end_date": s_d.isoformat() if is_m else e_d.isoformat(),
+                "region": c_reg,
+                "subcontractor": c_sub,
                 "is_milestone": is_m
             }
             supabase.table("tasks").insert(new_task).execute()
             st.session_state.tasks = load_data()
-            st.success("已新增至資料庫")
             st.rerun()
 
 # ==========================================
-# 6. 主畫面：工作清單與自動存檔 (含防呆除錯)
+# 6. 主畫面表格與自動存檔
 # ==========================================
-st.subheader("📋 工作清單")
+st.subheader("📋 工程任務清單")
 edited_df = st.data_editor(
     st.session_state.tasks, 
     num_rows="dynamic", 
     use_container_width=True,
-    key="db_editor"
+    key="main_editor"
 )
 
 if not edited_df.equals(st.session_state.tasks):
     try:
-        res_del = supabase.table("tasks").delete().neq("id", -1).execute()
-        
+        supabase.table("tasks").delete().neq("id", -1).execute()
         upload_list = []
         for _, row in edited_df.iterrows():
             upload_list.append({
@@ -128,114 +127,61 @@ if not edited_df.equals(st.session_state.tasks):
                 "start_date": row['開始時間'].isoformat(),
                 "end_date": row['完成時間'].isoformat(),
                 "region": row['區域'],
+                "subcontractor": row['施工廠商'],
                 "is_milestone": bool(row['是否為里程碑'])
             })
-        
         if upload_list:
-            res_ins = supabase.table("tasks").insert(upload_list).execute()
-            
+            supabase.table("tasks").insert(upload_list).execute()
         st.session_state.tasks = edited_df
-        st.toast("💾 資料庫同步成功", icon="☁️")
-        
+        st.toast("💾 資料庫已同步", icon="☁️")
     except Exception as e:
-        st.error(f"❌ 同步失敗！錯誤訊息：{str(e)}")
-        st.info("提示：這通常是 Supabase 的 RLS 權限阻擋，請到 Supabase 後台關閉 RLS 或設定 Insert/Delete Policy。")
+        st.error(f"同步失敗：{e}")
 
 # ==========================================
-# 7. 繪製甘特圖 (強制黑色文字與格線版)
+# 7. 多維度甘特圖生成
 # ==========================================
+st.divider()
+col_ctrl1, col_ctrl2 = st.columns([1, 2])
+group_target = col_ctrl1.radio("📊 圖表分類維度：", ["依區域", "依施工廠商"], horizontal=True)
+
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     df = st.session_state.tasks.copy()
     if not df.empty:
+        # 設定分類基準
+        color_col = "區域" if group_target == "依區域" else "施工廠商"
+        
         plot_df = df.copy()
         plot_df['繪圖結束'] = plot_df['完成時間'] + pd.Timedelta(days=1)
         
-        unique_regions = df['區域'].unique()
+        # 顏色對照表
+        unique_vals = df[color_col].unique()
         color_seq = px.colors.qualitative.Plotly
-        color_map = {reg: color_seq[i % len(color_seq)] for i, reg in enumerate(unique_regions)}
+        color_map = {val: color_seq[i % len(color_seq)] for i, val in enumerate(unique_vals)}
 
         fig = px.timeline(
             plot_df[~plot_df['是否為里程碑']], 
-            x_start="開始時間", 
-            x_end="繪圖結束", 
-            y="工作項目", 
-            color="區域",
+            x_start="開始時間", x_end="繪圖結束", y="工作項目", 
+            color=color_col,
             color_discrete_map=color_map,
+            title=f"工程進度總表 (分類：{color_col})",
             height=400 + len(df)*30
         )
 
-        # 處理里程碑星號
-        ms_df = plot_df[plot_df['是否為里程碑']]
-        for _, m in ms_df.iterrows():
-            fig.add_trace(go.Scatter(
-                x=[m['開始時間']], 
-                y=[m['工作項目']], 
-                mode='markers+text',
-                marker=dict(
-                    symbol='star', size=20, 
-                    color=color_map.get(m['區域'], 'gray'), 
-                    line=dict(color='black', width=1)
-                ),
-                text=[f" {m['開始時間'].strftime('%m/%d')}"], 
-                textposition='middle right', 
-                textfont=dict(color='black', size=14), # 💡 強制里程碑文字為黑色
-                name=m['區域'], 
-                legendgroup=m['區域'], 
-                showlegend=False
-            ))
-
-        # 取得今天日期並畫線
+        # 加上里程碑與今日線 (邏輯同前)
         try:
             today = pd.Timestamp.now(tz='Asia/Taipei')
         except:
             today = pd.Timestamp.now()
+            
+        fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
+        fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14), xanchor="left", xshift=5)
 
-        fig.add_vline(
-            x=today, line_width=2, line_dash="dash", line_color="red", layer="above"
-        )
-        
-        fig.add_annotation(
-            x=today, y=1, yref="paper", yanchor="bottom",
-            text="今日", showarrow=False,
-            font=dict(color="red", size=14),
-            xanchor="left", xshift=5
-        )
-
-        # 💡 重點修正區：強制指定所有標題與刻度的文字為黑色
         fig.update_yaxes(autorange="reversed", type='category')
         fig.update_layout(
-            # 1. 主標題設定為黑色
-            title=dict(
-                text=f"{st.session_state.project_name} - 進度總表",
-                font=dict(color="black", size=20)
-            ),
-            # 2. X/Y 軸標題設定為黑色
-            xaxis_title=dict(text="日期", font=dict(color="black", size=14)),
-            yaxis_title=dict(text="工作項目", font=dict(color="black", size=14)),
-            # 3. 基礎版面設定
             font=dict(color="black"),
-            hovermode="closest",
-            plot_bgcolor="#d3d3d3",   
-            paper_bgcolor="#d3d3d3",  
-            # 4. X 軸刻度文字 (日期) 設定為黑色
-            xaxis=dict(
-                showgrid=True, 
-                gridcolor='black', 
-                tickformat="%m/%d",   
-                dtick="D1",
-                tickfont=dict(color="black", size=12) # ⬅️ 日期刻度黑字
-            ),
-            # 5. Y 軸刻度文字 (工作項目) 設定為黑色
-            yaxis=dict(
-                showgrid=True, 
-                gridcolor='black',
-                tickfont=dict(color="black", size=14) # ⬅️ 項目刻度黑字
-            ),
-            # 6. 圖例 (Legend) 設定為黑色
-            legend=dict(
-                font=dict(color="black")
-            ),
-            margin=dict(l=20, r=20, t=60, b=20)
+            plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3",
+            xaxis=dict(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black")),
+            yaxis=dict(showgrid=True, gridcolor='black', tickfont=dict(color="black")),
+            legend=dict(font=dict(color="black"), title=dict(font=dict(color="black")))
         )
-        
         st.plotly_chart(fig, use_container_width=True)
