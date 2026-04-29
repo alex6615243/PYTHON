@@ -190,42 +190,94 @@ if not edited_df.equals(st.session_state.tasks):
         except Exception as e: st.error(f"同步失敗：{e}")
 
 # ==========================================
-# 7. 多維度甘特圖生成
+# 7. 多維度甘特圖生成 (日期格式：月/日 版)
 # ==========================================
 st.divider()
 target = st.radio("📊 分類維度：", ["依區域", "依施工廠商"], horizontal=True)
 
 if st.button("🌟 生成互動式甘特圖", type="primary"):
     p_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
+    
     if not p_df.empty:
         try:
+            # 1. 數據格式轉換
             p_df['開始時間'] = pd.to_datetime(p_df['開始時間'])
             p_df['完成時間'] = pd.to_datetime(p_df['完成時間'])
+            p_df['繪圖結束'] = p_df['完成時間'] + pd.Timedelta(days=1)
+            
             color_col = "區域" if target == "依區域" else "施工廠商"
             p_df['是否為里程碑'] = p_df['是否為里程碑'].fillna(False).astype(bool)
-            p_df['繪圖結束'] = p_df['完成時間'] + pd.Timedelta(days=1)
+            
+            # 2. 🚀 核心排序：依日期先後整隊
             p_df = p_df.sort_values("開始時間")
             
-            color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
+            # 3. 建立顏色映射
+            unique_vals = p_df[color_col].unique()
+            color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(unique_vals)}
             
-            fig = px.timeline(p_df[~p_df['是否為里程碑']], x_start="開始時間", x_end="繪圖結束", y="工作項目", 
-                              color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
+            # 4. 繪製主圖 (長條圖)
+            fig = px.timeline(
+                p_df[~p_df['是否為里程碑']], 
+                x_start="開始時間", x_end="繪圖結束", y="工作項目", 
+                color=color_col, color_discrete_map=color_map, 
+                height=400 + len(p_df) * 30
+            )
             
-            # 里程碑星星
+            # 5. 處理里程碑星星
             leg_set = set(p_df[~p_df['是否為里程碑']][color_col].unique())
             for _, m in p_df[p_df['是否為里程碑']].iterrows():
-                show_leg = m[color_col] not in leg_set
-                if show_leg: leg_set.add(m[color_col])
-                fig.add_trace(go.Scatter(x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
-                    marker=dict(symbol='star', size=15, color=color_map.get(m[color_col])),
-                    text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right',
-                    name=m[color_col], legendgroup=m[color_col], showlegend=show_leg))
+                curr_cat = m[color_col]
+                show_leg = curr_cat not in leg_set
+                if show_leg: leg_set.add(curr_cat)
+                
+                fig.add_trace(go.Scatter(
+                    x=[m['開始時間']], y=[m['工作項目']], mode='markers+text',
+                    marker=dict(symbol='star', size=18, color=color_map.get(curr_cat, 'gray'), line=dict(color='black', width=1)),
+                    # 💡 關鍵修正：里程碑日期改為「月/日」
+                    text=[f" {m['開始時間'].strftime('%m/%d')}"], 
+                    textposition='middle right',
+                    textfont=dict(color='black', size=12),
+                    name=curr_cat, legendgroup=curr_cat, showlegend=show_leg
+                ))
             
-            fig.update_yaxes(categoryorder='array', categoryarray=p_df['工作項目'].tolist(), autorange="reversed")
-            fig.update_layout(font=dict(color="black"), plot_bgcolor="#d3d3d3", paper_bgcolor="#d3d3d3")
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e: st.error(f"繪圖錯誤：{e}")
+            # 6. 今日紅線
+            try:
+                today = pd.Timestamp.now(tz='Asia/Taipei')
+            except:
+                today = pd.Timestamp.now()
+            fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
+            fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
 
+            # 7. 強制樣式設定：黑字、黑線、月/日格式
+            fig.update_yaxes(
+                categoryorder='array', 
+                categoryarray=p_df['工作項目'].tolist(), 
+                autorange="reversed",
+                showgrid=True, gridcolor='black',      # 黑色橫向格線
+                tickfont=dict(color="black", size=14)
+            )
+            
+            fig.update_xaxes(
+                showgrid=True, gridcolor='black',      # 黑色縱向格線
+                # 💡 關鍵修正：X 軸日期格式改為「月/日」
+                tickformat="%m/%d",
+                dtick="D1",                            # 每一天顯示一個刻度
+                tickfont=dict(color="black", size=12)
+            )
+
+            fig.update_layout(
+                title=dict(text=f"{st.session_state.project_name} - 進度總表", font=dict(color="black", size=22)),
+                font=dict(color="black"),
+                plot_bgcolor="#f0f0f0",                 # 淺灰底色，增加對比
+                paper_bgcolor="#f0f0f0",
+                legend=dict(font=dict(color="black")),
+                margin=dict(l=20, r=20, t=70, b=20)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"繪圖發生錯誤：{e}")
 # ==========================================
 # 8. 系統備份與回復
 # ==========================================
