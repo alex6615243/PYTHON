@@ -149,7 +149,7 @@ with st.sidebar.form("add_task_form"):
             st.rerun()
 
 # ==========================================
-# 6. 主畫面表格與自動存檔
+# 6. 主畫面表格與自動存檔 (修復空白列 NaN 報錯版)
 # ==========================================
 st.subheader("📋 工程任務清單")
 edited_df = st.data_editor(
@@ -161,25 +161,33 @@ edited_df = st.data_editor(
 
 if not edited_df.equals(st.session_state.tasks):
     try:
-        supabase.table("tasks").delete().neq("id", -1).execute()
+        # 🛡️ 關鍵防呆：自動過濾掉「未填寫完整」的空白列 (清除包含 NaN 或 NaT 的列)
+        clean_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
+        
         upload_list = []
-        for _, row in edited_df.iterrows():
+        for _, row in clean_df.iterrows():
             upload_list.append({
                 "task_name": str(row['工作項目']),
                 "start_date": row['開始時間'].isoformat(),
                 "end_date": row['完成時間'].isoformat(),
-                "region": row['區域'],
-                "subcontractor": row['施工廠商'],
+                # 如果使用者沒選區域或廠商，給予預設值以防出錯
+                "region": str(row['區域']) if pd.notna(row['區域']) else "未設定",
+                "subcontractor": str(row['施工廠商']) if pd.notna(row['施工廠商']) else "未設定",
                 "is_milestone": bool(row['是否為里程碑'])
             })
+            
+        # 執行同步
+        supabase.table("tasks").delete().neq("id", -1).execute()
         if upload_list:
             supabase.table("tasks").insert(upload_list).execute()
+            
         st.session_state.tasks = edited_df
         st.toast("💾 資料庫已同步", icon="☁️")
+        
     except Exception as e:
+        # 如果還是發生未預期的錯誤，顯示出來並停止同步，保護資料庫
         st.error(f"同步失敗：{e}")
-
-# ==========================================
+        
 # 7. 多維度甘特圖生成
 # ==========================================
 st.divider()
