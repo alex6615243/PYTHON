@@ -158,21 +158,30 @@ edited_df = st.data_editor(
     use_container_width=True,
     key="main_editor"
 )
-
 if not edited_df.equals(st.session_state.tasks):
     try:
-        # 🛡️ 關鍵防呆：自動過濾掉「未填寫完整」的空白列 (清除包含 NaN 或 NaT 的列)
         clean_df = edited_df.dropna(subset=['工作項目', '開始時間', '完成時間']).copy()
+        
+        # 🛡️ 動態抓取合法的預設值 (確保絕對存在於資料庫中)
+        default_reg = st.session_state.regions[0] if st.session_state.regions else "主區域"
+        default_sub = st.session_state.subcontractors[0] if st.session_state.subcontractors else "未指定廠商"
         
         upload_list = []
         for _, row in clean_df.iterrows():
+            # 讀取當前列的值
+            val_reg = str(row['區域'])
+            val_sub = str(row['施工廠商'])
+            
+            # 嚴格過濾：如果真的是空的、nan 或是 None，就強制替換成合法預設值
+            final_reg = val_reg if pd.notna(row['區域']) and val_reg not in ['nan', 'None', ''] else default_reg
+            final_sub = val_sub if pd.notna(row['施工廠商']) and val_sub not in ['nan', 'None', ''] else default_sub
+            
             upload_list.append({
                 "task_name": str(row['工作項目']),
                 "start_date": row['開始時間'].isoformat(),
                 "end_date": row['完成時間'].isoformat(),
-                # 如果使用者沒選區域或廠商，給予預設值以防出錯
-                "region": str(row['區域']) if pd.notna(row['區域']) else "未設定",
-                "subcontractor": str(row['施工廠商']) if pd.notna(row['施工廠商']) else "未設定",
+                "region": final_reg,
+                "subcontractor": final_sub,
                 "is_milestone": bool(row['是否為里程碑'])
             })
             
@@ -185,8 +194,10 @@ if not edited_df.equals(st.session_state.tasks):
         st.toast("💾 資料庫已同步", icon="☁️")
         
     except Exception as e:
-        # 如果還是發生未預期的錯誤，顯示出來並停止同步，保護資料庫
         st.error(f"同步失敗：{e}")
+
+            
+       
         
 # 7. 多維度甘特圖生成
 # ==========================================
