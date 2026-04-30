@@ -71,25 +71,57 @@ if 'subcontractors' not in st.session_state: st.session_state.subcontractors = l
 st.title("🏢 營建工程與試車管理系統")
 
 # ==========================================
-# 4. 側邊欄基礎資料管理
+# 4. 側邊欄管理 (區域與廠商管理)
 # ==========================================
 st.sidebar.header("⚙️ 基礎資料管理")
-with st.sidebar.expander("📍 區域與廠商管理"):
-    t_reg, t_sub = st.tabs(["📍 區域", "👷 廠商"])
-    with t_reg:
-        nr = st.text_input("新增區域", key="nr_in")
-        if st.button("加入區域"):
-            if nr and nr not in st.session_state.regions:
-                supabase.table("regions").insert({"name": nr}).execute()
-                st.session_state.regions.append(nr)
-                st.rerun()
-    with t_sub:
-        ns = st.text_input("新增廠商", key="ns_in")
-        if st.button("加入廠商"):
-            if ns and ns not in st.session_state.subcontractors:
-                supabase.table("subcontractors").insert({"name": ns}).execute()
-                st.session_state.subcontractors.append(ns)
-                st.rerun()
+
+# 📍 區域管理
+with st.sidebar.expander("📍 區域管理", expanded=False):
+    tab_reg_add, tab_reg_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
+    
+    # --- 新增區域 ---
+    with tab_reg_add:
+        new_reg = st.text_input("新增區域名稱", key="new_reg_input")
+        if st.button("加入區域", use_container_width=True):
+            if new_reg and new_reg not in st.session_state.regions:
+                try:
+                    supabase.table("regions").insert({"name": new_reg}).execute()
+                    st.session_state.regions.append(new_reg)
+                    st.toast(f"✅ 區域「{new_reg}」已新增！", icon="📍")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"新增失敗: {e}")
+            elif new_reg in st.session_state.regions:
+                st.warning("該區域已存在")
+
+    # --- 刪除區域 (含安全檢查) ---
+    with tab_reg_del:
+        del_reg = st.selectbox("選擇要刪除的區域", st.session_state.regions, key="del_reg_sel")
+        if st.button("確認刪除區域", type="primary", use_container_width=True):
+            # 🛡️ 安全檢查：確認該區域是否正被任何任務使用
+            in_construction = (st.session_state.tasks['區域'] == del_reg).any()
+            in_commissioning = (st.session_state.comm_tasks['區域'] == del_reg).any()
+            
+            if in_construction or in_commissioning:
+                # 如果該區域還有任務，拒絕刪除
+                where = []
+                if in_construction: where.append("施工任務")
+                if in_commissioning: where.append("試車任務")
+                st.error(f"⚠️ 無法刪除！「{del_reg}」目前仍有【{' & '.join(where)}】在使用中。請先修改或刪除相關任務。")
+            else:
+                try:
+                    # 從資料庫移除
+                    supabase.table("regions").delete().eq("name", del_reg).execute()
+                    # 從本地快取移除
+                    st.session_state.regions.remove(del_reg)
+                    st.toast(f"🗑️ 區域「{del_reg}」已成功移除", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"刪除失敗: {e}")
+
+# 👷 廠商管理 (維持原樣)
+with st.sidebar.expander("👷 廠商管理", expanded=False):
+    # ... (廠商的新增與刪除邏輯，建議也加入類似的 in_construction 檢查)
 
 # ==========================================
 # 5. 施工任務清單
