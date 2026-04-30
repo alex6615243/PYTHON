@@ -94,16 +94,36 @@ def load_list(table_name):
     res = supabase.table(table_name).select("name").execute()
     return [item['name'] for item in res.data] if res.data else ["未設定"]
 
+# 📍 復原：載入專案名稱設定
+def load_project_name():
+    try:
+        res = supabase.table("project_config").select("project_name").eq("id", 1).execute()
+        return res.data[0]['project_name'] if res.data else "新工程案"
+    except: return "新工程案"
+
 # ==========================================
-# 3. 初始化設定
+# 3. 初始化設定與專案名稱
 # ==========================================
 st.set_page_config(layout="wide", page_title="營建與試車管理系統")
+
 if 'tasks' not in st.session_state: st.session_state.tasks = load_data("tasks")
 if 'comm_tasks' not in st.session_state: st.session_state.comm_tasks = load_data("commissioning_tasks")
 if 'regions' not in st.session_state: st.session_state.regions = load_list("regions")
 if 'subcontractors' not in st.session_state: st.session_state.subcontractors = load_list("subcontractors")
+if 'project_name' not in st.session_state: st.session_state.project_name = load_project_name()
 
-st.title("🏢 營建工程與試車管理系統")
+# 📍 復原：專案名稱大標題與同步編輯框
+st.title(f"🏢 {st.session_state.project_name}")
+
+new_proj_name = st.text_input("📌 專案名稱設定：", value=st.session_state.project_name)
+if new_proj_name != st.session_state.project_name:
+    try:
+        supabase.table("project_config").upsert({"id": 1, "project_name": new_proj_name}).execute()
+        st.session_state.project_name = new_proj_name
+        st.toast("專案名稱已更新", icon="📝")
+        st.rerun()
+    except Exception as e:
+        st.error(f"專案名稱更新失敗: {e}")
 
 # ==========================================
 # 4. 側邊欄 (區域與廠商管理)
@@ -196,7 +216,7 @@ if not edited_comm.equals(st.session_state.comm_tasks):
         except: pass
 
 # ==========================================
-# 7. 圖表生成 (完整修復：星星 + 今日線)
+# 7. 圖表生成 (完整修復：星星 + 今日線 + 專案名稱標題)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -212,7 +232,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
     
-    # 🛡️ 確保至少有一個一般任務才能畫圖
     if not is_comm:
         p_df['是否為里程碑'] = p_df['是否為里程碑'].fillna(False).astype(bool)
         draw_df = p_df[~p_df['是否為里程碑']]
@@ -223,7 +242,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
         
     fig = px.timeline(draw_df, x_start="開始時間", x_end="繪圖結束", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     
-    # 🌟 復原里程碑星星邏輯
     if not is_comm: 
         leg_set = set(draw_df[color_col].unique())
         for _, m in p_df[p_df['是否為里程碑']].iterrows():
@@ -239,7 +257,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
                 name=cat, legendgroup=cat, showlegend=show_leg
             ))
 
-    # 📍 復原今日紅線邏輯
     try:
         today = pd.Timestamp.now(tz='Asia/Taipei')
     except:
@@ -254,10 +271,12 @@ def draw_gantt(df, title, color_col, is_comm=False):
 
 with tab_g1:
     v_mode = st.radio("分類維度：", ["區域", "施工廠商"], horizontal=True, key="mode_const")
-    if construction_button("🚀 生成施工甘特圖", key="run_g1"): draw_gantt(edited_tasks, "🧱 施工進度總表", v_mode)
+    if construction_button("🚀 生成施工甘特圖", key="run_g1"): 
+        draw_gantt(edited_tasks, f"🧱 {st.session_state.project_name} - 施工進度總表", v_mode)
 
 with tab_g2:
-    if comm_button("✅ 生成試車甘特圖", key="run_g2"): draw_gantt(edited_comm, "🧪 試車進度總表", "區域", is_comm=True)
+    if comm_button("✅ 生成試車甘特圖", key="run_g2"): 
+        draw_gantt(edited_comm, f"🧪 {st.session_state.project_name} - 試車排程總表", "區域", is_comm=True)
 
 # ==========================================
 # 8. 系統存檔與回復
@@ -304,4 +323,3 @@ with st.sidebar.expander("💾 檔案管理"):
             if st.button("刪除存檔", type="primary", use_container_width=True, key="btn_del_snap"):
                 supabase.table("tasks_backups").delete().eq("id", opts[sel_b]).execute()
                 st.rerun()
-
