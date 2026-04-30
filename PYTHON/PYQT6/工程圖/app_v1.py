@@ -196,7 +196,7 @@ if not edited_comm.equals(st.session_state.comm_tasks):
         except: pass
 
 # ==========================================
-# 7. 圖表生成 (上色按鈕)
+# 7. 圖表生成 (完整修復：星星 + 今日線)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -204,13 +204,49 @@ tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"
 def draw_gantt(df, title, color_col, is_comm=False):
     p_df = df.dropna(subset=[df.columns[1], '開始時間', '完成時間']).copy()
     if p_df.empty: return st.warning("請填寫資料")
+    
     p_df['開始時間'] = pd.to_datetime(p_df['開始時間'])
     p_df['完成時間'] = pd.to_datetime(p_df['完成時間'])
     p_df['繪圖結束'] = p_df['完成時間'] + pd.Timedelta(days=1)
     p_df = p_df.sort_values("開始時間")
+    
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
-    draw_df = p_df[~p_df['是否為里程碑']] if not is_comm else p_df
+    
+    # 🛡️ 確保至少有一個一般任務才能畫圖
+    if not is_comm:
+        p_df['是否為里程碑'] = p_df['是否為里程碑'].fillna(False).astype(bool)
+        draw_df = p_df[~p_df['是否為里程碑']]
+        if draw_df.empty: 
+            return st.warning("⚠️ 必須至少有一項「非里程碑」的任務才能建立座標軸！")
+    else:
+        draw_df = p_df
+        
     fig = px.timeline(draw_df, x_start="開始時間", x_end="繪圖結束", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
+    
+    # 🌟 復原里程碑星星邏輯
+    if not is_comm: 
+        leg_set = set(draw_df[color_col].unique())
+        for _, m in p_df[p_df['是否為里程碑']].iterrows():
+            cat = m[color_col]
+            show_leg = cat not in leg_set
+            if show_leg: leg_set.add(cat)
+            
+            fig.add_trace(go.Scatter(
+                x=[m['開始時間']], y=[m[p_df.columns[1]]], mode='markers+text',
+                marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)),
+                text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right', 
+                textfont=dict(color='black', size=12),
+                name=cat, legendgroup=cat, showlegend=show_leg
+            ))
+
+    # 📍 復原今日紅線邏輯
+    try:
+        today = pd.Timestamp.now(tz='Asia/Taipei')
+    except:
+        today = pd.Timestamp.now()
+    fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
+    fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
+
     fig.update_yaxes(categoryorder='array', categoryarray=p_df[p_df.columns[1]].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
     fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12))
     fig.update_layout(plot_bgcolor="#f0f0f0", paper_bgcolor="#f0f0f0", font=dict(color="black"), title=dict(text=title, font=dict(size=22)))
@@ -224,7 +260,7 @@ with tab_g2:
     if comm_button("✅ 生成試車甘特圖", key="run_g2"): draw_gantt(edited_comm, "🧪 試車進度總表", "區域", is_comm=True)
 
 # ==========================================
-# 8. 備份與管理 (上色按鈕)
+# 8. 系統存檔與回復
 # ==========================================
 st.sidebar.divider()
 with st.sidebar.expander("💾 檔案管理"):
@@ -249,16 +285,17 @@ with st.sidebar.expander("💾 檔案管理"):
                 try:
                     snap_res = supabase.table("tasks_backups").select("data_json").eq("id", opts[sel_b]).execute()
                     full_data = json.loads(snap_res.data[0]['data_json'])
-                    # 恢復施工
+                    
                     df_t = pd.read_json(io.StringIO(full_data['tasks']))
                     up_t = [{"task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": pd.to_datetime(r['開始時間']).date().isoformat(), "end_date": pd.to_datetime(r['完成時間']).date().isoformat(), "region": r['區域'], "is_milestone": bool(r['是否為里程碑'])} for _, r in df_t.iterrows()]
                     supabase.table("tasks").delete().neq("id", -1).execute()
                     if up_t: supabase.table("tasks").insert(up_t).execute()
-                    # 恢復試車
+                    
                     df_c = pd.read_json(io.StringIO(full_data['comm']))
                     up_c = [{"test_item": r['試車項目'], "start_date": pd.to_datetime(r['開始時間']).date().isoformat(), "end_date": pd.to_datetime(r['完成時間']).date().isoformat(), "region": r['區域']} for _, r in df_c.iterrows()]
                     supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
                     if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
+                    
                     st.session_state.tasks = load_data("tasks")
                     st.session_state.comm_tasks = load_data("commissioning_tasks")
                     st.rerun()
