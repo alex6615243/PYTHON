@@ -157,7 +157,7 @@ with st.sidebar.expander("📍 區域與廠商管理"):
             else: st.error("⚠️ 該廠商尚有任務使用中")
 
 # ==========================================
-# 5. 施工任務清單 (✅ 閃退修正區)
+# 5. 施工任務清單
 # ==========================================
 st.header("🧱 施工任務清單")
 
@@ -171,7 +171,6 @@ col_cfg_task = {
 }
 edited_tasks = st.data_editor(st.session_state.tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
 
-# 💡 核心修正：只比對「完成填寫」的有效資料，避免輸入到一半被打斷
 clean_current_t = st.session_state.tasks.dropna(subset=['施工項目', '開始時間', '完成時間']).copy()
 clean_edited_t = edited_tasks.dropna(subset=['施工項目', '開始時間', '完成時間']).copy()
 
@@ -188,14 +187,13 @@ if not clean_edited_t.equals(clean_current_t):
             supabase.table("tasks").delete().neq("id", -1).execute()
             if up_t: supabase.table("tasks").insert(up_t).execute()
             
-            # 只有當有效資料存入資料庫後，才更新底層的 session_state
             st.session_state.tasks = edited_tasks
             st.toast("施工清單已同步", icon="🏗️")
         except Exception as e: st.error(f"施工同步發生錯誤: {e}")
     else: st.error(f"施工清單第 {invalid_t} 列廠商或區域名稱不合法")
 
 # ==========================================
-# 6. 試車任務清單 (✅ 閃退修正區)
+# 6. 試車任務清單
 # ==========================================
 st.header("🧪 試車任務清單")
 col_cfg_comm = {
@@ -228,7 +226,7 @@ if not clean_edited_c.equals(clean_current_c):
     else: st.error(f"試車清單第 {invalid_c} 列區域名稱不合法")
 
 # ==========================================
-# 7. 圖表生成
+# 7. 圖表生成 (精準刻度版)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -239,7 +237,7 @@ def draw_gantt(df, title, color_col, is_comm=False):
     
     p_df['開始時間'] = pd.to_datetime(p_df['開始時間'])
     p_df['完成時間'] = pd.to_datetime(p_df['完成時間'])
-    p_df['繪圖結束'] = p_df['完成時間'] + pd.Timedelta(days=1)
+    # 💡 移除 `+ pd.Timedelta(days=1)`，讓結束日期貼齊該日期的 00:00 刻度
     p_df = p_df.sort_values("開始時間")
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
@@ -252,7 +250,8 @@ def draw_gantt(df, title, color_col, is_comm=False):
     else:
         draw_df = p_df
         
-    fig = px.timeline(draw_df, x_start="開始時間", x_end="繪圖結束", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
+    # 💡 x_end 改為直接對齊 "完成時間"
+    fig = px.timeline(draw_df, x_start="開始時間", x_end="完成時間", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     
     if not is_comm: 
         leg_set = set(draw_df[color_col].unique())
