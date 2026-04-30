@@ -277,7 +277,12 @@ def draw_gantt(df, title, color_col, is_comm=False):
     fig.update_yaxes(categoryorder='array', categoryarray=p_df[p_df.columns[1]].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
     fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12))
     fig.update_layout(plot_bgcolor="#f0f0f0", paper_bgcolor="#f0f0f0", font=dict(color="black"), title=dict(text=title, font=dict(size=22)))
-    st.plotly_chart(fig, use_container_width=True)
+    # 統一控制列設定：移除容易產生差異的圈選工具，並隱藏 Plotly Logo
+    chart_config = {
+        'displaylogo': False,
+        'modeBarButtonsToRemove': ['lasso2d', 'select2d'] 
+    }
+    st.plotly_chart(fig, use_container_width=True, config=chart_config)
 
 with tab_g1:
     v_mode = st.radio("分類維度：", ["區域", "施工廠商"], horizontal=True, key="mode_const")
