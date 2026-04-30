@@ -226,7 +226,7 @@ if not clean_edited_c.equals(clean_current_c):
     else: st.error(f"試車清單第 {invalid_c} 列區域名稱不合法")
 
 # ==========================================
-# 7. 圖表生成 (精準刻度版)
+# 7. 圖表生成 (精準對齊刻度版)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -237,7 +237,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
     
     p_df['開始時間'] = pd.to_datetime(p_df['開始時間'])
     p_df['完成時間'] = pd.to_datetime(p_df['完成時間'])
-    # 💡 移除 `+ pd.Timedelta(days=1)`，讓結束日期貼齊該日期的 00:00 刻度
     p_df = p_df.sort_values("開始時間")
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
@@ -250,7 +249,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
     else:
         draw_df = p_df
         
-    # 💡 x_end 改為直接對齊 "完成時間"
     fig = px.timeline(draw_df, x_start="開始時間", x_end="完成時間", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     
     if not is_comm: 
@@ -267,10 +265,12 @@ def draw_gantt(df, title, color_col, is_comm=False):
                 name=cat, legendgroup=cat, showlegend=show_leg
             ))
 
+    # 💡 核心修正：利用 normalize() 將時、分、秒歸零，強迫對齊 00:00 刻度線
     try:
-        today = pd.Timestamp.now(tz='Asia/Taipei')
+        today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
     except:
-        today = pd.Timestamp.now()
+        today = pd.Timestamp.now().normalize()
+        
     fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
     fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
 
