@@ -249,13 +249,13 @@ with st.sidebar.expander("💾 系統數據管理"):
     st.divider()
     bn = st.text_input("檔案名稱", key="bn_in")
     st.markdown('<div class="construction-btn">', unsafe_allow_html=True)
-    if st.button("存檔 (雲端快照)", key="btn_save"):
+    if st.button("存檔", key="btn_save"):
         snap = {
             "tasks": st.session_state.tasks.to_json(orient='records', date_format='iso'),
             "comm": st.session_state.comm_tasks.to_json(orient='records', date_format='iso')
         }
         supabase.table("tasks_backups").insert({"backup_name": bn if bn else "自動備份", "data_json": json.dumps(snap)}).execute()
-        st.toast("已建立雲端存檔")
+        st.toast("已建立存檔")
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
