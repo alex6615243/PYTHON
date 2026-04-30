@@ -262,22 +262,22 @@ with st.sidebar.expander("💾 系統數據管理"):
     st.download_button("📥 下載試車 CSV", data=st.session_state.comm_tasks.to_csv(index=False).encode('utf-8-sig'), file_name="comm.csv", use_container_width=True)
     
     st.divider()
-    bn = st.text_input("快照備份名稱", key="bn_in")
-    if st.button("🚀 建立雲端全系統快照"):
+    bn = st.text_input("檔案名稱", key="bn_in")
+    if st.button("存檔"):
         snap = {
             "tasks": st.session_state.tasks.to_json(orient='records', date_format='iso'),
             "comm": st.session_state.comm_tasks.to_json(orient='records', date_format='iso')
         }
         supabase.table("tasks_backups").insert({"backup_name": bn if bn else "自動備份", "data_json": json.dumps(snap)}).execute()
-        st.toast("快照已建立")
+        st.toast("已存檔")
         st.rerun()
 
     res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
     if res_b.data:
         opts = {f"{i['backup_time'][5:16]} - {i['backup_name']}": i['id'] for i in res_b.data}
-        sel_b = st.selectbox("選擇回復儲存點", options=list(opts.keys()))
+        sel_b = st.selectbox("選擇檔案回復", options=list(opts.keys()))
         c1, c2 = st.columns(2)
-        if c1.button("🔥 確認回復", use_container_width=True):
+        if c1.button("確認回復", use_container_width=True):
             try:
                 snap_res = supabase.table("tasks_backups").select("data_json").eq("id", opts[sel_b]).execute()
                 full_data = json.loads(snap_res.data[0]['data_json'])
@@ -311,10 +311,10 @@ with st.sidebar.expander("💾 系統數據管理"):
                 # 重新載入數據
                 st.session_state.tasks = load_data("tasks")
                 st.session_state.comm_tasks = load_data("commissioning_tasks")
-                st.toast("全系統數據已回復", icon="🔄")
+                st.toast("檔案已回復", icon="🔄")
                 st.rerun()
             except Exception as e: st.error(f"回復失敗: {e}")
 
-        if c2.button("🗑️ 刪除儲存點", use_container_width=True):
+        if c2.button("刪除存檔", use_container_width=True):
             supabase.table("tasks_backups").delete().eq("id", opts[sel_b]).execute()
             st.rerun()
