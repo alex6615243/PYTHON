@@ -71,7 +71,7 @@ if 'subcontractors' not in st.session_state: st.session_state.subcontractors = l
 st.title("🏢 營建工程與試車管理系統")
 
 # ==========================================
-# 4. 側邊欄管理 (區域與廠商管理)
+# 4. 側邊欄管理 (區域與廠商管理 - 完整版)
 # ==========================================
 st.sidebar.header("⚙️ 基礎資料管理")
 
@@ -79,7 +79,6 @@ st.sidebar.header("⚙️ 基礎資料管理")
 with st.sidebar.expander("📍 區域管理", expanded=False):
     tab_reg_add, tab_reg_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
     
-    # --- 新增區域 ---
     with tab_reg_add:
         new_reg = st.text_input("新增區域名稱", key="new_reg_input")
         if st.button("加入區域", use_container_width=True):
@@ -89,12 +88,9 @@ with st.sidebar.expander("📍 區域管理", expanded=False):
                     st.session_state.regions.append(new_reg)
                     st.toast(f"✅ 區域「{new_reg}」已新增！", icon="📍")
                     st.rerun()
-                except Exception as e:
-                    st.error(f"新增失敗: {e}")
-            elif new_reg in st.session_state.regions:
-                st.warning("該區域已存在")
+                except Exception as e: st.error(f"新增失敗: {e}")
+            elif new_reg in st.session_state.regions: st.warning("該區域已存在")
 
-    # --- 刪除區域 (含安全檢查) ---
     with tab_reg_del:
         del_reg = st.selectbox("選擇要刪除的區域", st.session_state.regions, key="del_reg_sel")
         if st.button("確認刪除區域", type="primary", use_container_width=True):
@@ -103,26 +99,51 @@ with st.sidebar.expander("📍 區域管理", expanded=False):
             in_commissioning = (st.session_state.comm_tasks['區域'] == del_reg).any()
             
             if in_construction or in_commissioning:
-                # 如果該區域還有任務，拒絕刪除
                 where = []
                 if in_construction: where.append("施工任務")
                 if in_commissioning: where.append("試車任務")
-                st.error(f"⚠️ 無法刪除！「{del_reg}」目前仍有【{' & '.join(where)}】在使用中。請先修改或刪除相關任務。")
+                st.error(f"⚠️ 無法刪除！「{del_reg}」目前仍有【{' & '.join(where)}】在使用中。")
             else:
                 try:
-                    # 從資料庫移除
                     supabase.table("regions").delete().eq("name", del_reg).execute()
-                    # 從本地快取移除
                     st.session_state.regions.remove(del_reg)
                     st.toast(f"🗑️ 區域「{del_reg}」已成功移除", icon="✅")
                     st.rerun()
-                except Exception as e:
-                    st.error(f"刪除失敗: {e}")
+                except Exception as e: st.error(f"刪除失敗: {e}")
 
-# 👷 廠商管理 (維持原樣)
+# 👷 廠商管理
 with st.sidebar.expander("👷 廠商管理", expanded=False):
-    # ... (廠商的新增與刪除邏輯，建議也加入類似的 in_construction 檢查)
+    tab_sub_add, tab_sub_del = st.tabs(["➕ 新增", "🗑️ 刪除"])
+    
+    with tab_sub_add:
+        new_sub = st.text_input("新增廠商名稱", key="ns_in")
+        if st.button("加入廠商", use_container_width=True):
+            if new_sub and new_sub not in st.session_state.subcontractors:
+                try:
+                    supabase.table("subcontractors").insert({"name": new_sub}).execute()
+                    st.session_state.subcontractors.append(new_sub)
+                    st.toast(f"✅ 廠商「{new_sub}」已新增！", icon="👷")
+                    st.rerun()
+                except Exception as e: st.error(f"新增失敗: {e}")
+            elif new_sub in st.session_state.subcontractors: st.warning("該廠商已存在")
 
+    with tab_sub_del:
+        del_sub = st.selectbox("選擇要刪除的廠商", st.session_state.subcontractors, key="del_sub_sel")
+        if st.button("確認刪除廠商", type="primary", use_container_width=True):
+            # 🛡️ 安全檢查：確認該廠商是否正被施工任務使用
+            in_use = (st.session_state.tasks['施工廠商'] == del_sub).any()
+            
+            if in_use:
+                st.error(f"⚠️ 無法刪除！「{del_sub}」目前仍負責施工任務中。請先修改或刪除相關任務。")
+            else:
+                try:
+                    # 從資料庫移除
+                    supabase.table("subcontractors").delete().eq("name", del_sub).execute()
+                    # 從本地快取移除
+                    st.session_state.subcontractors.remove(del_sub)
+                    st.toast(f"🗑️ 廠商「{del_sub}」已成功移除", icon="✅")
+                    st.rerun()
+                except Exception as e: st.error(f"刪除失敗: {e}")
 # ==========================================
 # 5. 施工任務清單
 # ==========================================
