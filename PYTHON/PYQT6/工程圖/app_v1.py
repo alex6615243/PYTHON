@@ -148,7 +148,7 @@ if not edited_tasks.equals(st.session_state.tasks):
                     "is_milestone": bool(r['是否為里程碑'])
                 })
             supabase.table("tasks").delete().neq("id", -1).execute()
-            if upload_t: supabase.table("tasks").insert(upload_list=upload_t).execute()
+            if upload_t: supabase.table("tasks").insert(upload_t).execute()
             st.session_state.tasks = edited_tasks
             st.toast("施工資料已同步", icon="🏗️")
         except Exception as e: st.error(f"施工同步失敗: {e}")
@@ -171,7 +171,7 @@ if not edited_comm.equals(st.session_state.comm_tasks):
         try:
             upload_c = [{"test_item": str(r['試車項目']), "start_date": r['開始時間'].isoformat(), "end_date": r['完成時間'].isoformat(), "region": str(r['區域'])} for _, r in clean_c.iterrows()]
             supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
-            supabase.table("commissioning_tasks").insert(upload_list=upload_c).execute()
+            supabase.table("commissioning_tasks").insert(upload_c).execute()
             st.session_state.comm_tasks = edited_comm
             st.toast("試車資料已同步", icon="🧪")
         except Exception as e: st.error(f"試車同步失敗: {e}")
@@ -252,7 +252,7 @@ with st.sidebar.expander("💾 系統數據管理"):
             df_t = pd.read_json(io.StringIO(data['tasks']))
             supabase.table("tasks").delete().neq("id", -1).execute()
             up_t = [{"task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": pd.to_datetime(r['開始時間']).isoformat(), "end_date": pd.to_datetime(r['完成時間']).isoformat(), "region": r['區域'], "is_milestone": bool(r['是否為里程碑'])} for _, r in df_t.iterrows()]
-            if up_t: supabase.table("tasks").insert(upload_list=up_t).execute()
+            if up_t: supabase.table("tasks").insert(up_t).execute()
             
             # 回復試車
             df_c = pd.read_json(io.StringIO(data['comm']))
