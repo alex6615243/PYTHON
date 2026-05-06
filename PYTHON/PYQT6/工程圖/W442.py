@@ -139,7 +139,7 @@ with st.sidebar.expander("📍 區域與廠商管理"):
 # ==========================================
 st.header("🧱 施工任務管理")
 
-st.subheader("📋 1. 預定計畫 (新增/刪除任務)")
+st.subheader("📋 1. 預定計畫")
 col_cfg_plan = {
     "區域": st.column_config.SelectboxColumn("區域", options=st.session_state.regions, required=True),
     "施工項目": st.column_config.TextColumn("施工項目", required=True),
@@ -192,7 +192,7 @@ if not clean_t.empty:
 # ==========================================
 st.header("🧪 試車任務管理")
 
-st.subheader("📋 1. 預定計畫 (新增/刪除任務)")
+st.subheader("📋 1. 預定計畫 ")
 col_cfg_c_plan = {
     "區域": st.column_config.SelectboxColumn("區域", options=st.session_state.regions, required=True),
     "試車項目": st.column_config.TextColumn("試車項目", required=True),
