@@ -59,7 +59,7 @@ def load_data(table_name="tasks"):
             df['完成度(%)'] = df['完成度(%)'].fillna(0).astype(int)
             return df[cols]
         return pd.DataFrame(columns=cols)
-    else: # 💡 試車任務現在也支援里程碑了
+    else: 
         cols = ['區域', '試車項目', '預定開始', '預定完成', '實際開始', '實際完成', '完成度(%)', '是否為里程碑']
         if not df.empty:
             df = df.rename(columns={'test_item': '試車項目', 'start_date': '預定開始', 'end_date': '預定完成', 'region': '區域', 'actual_start': '實際開始', 'actual_end': '實際完成', 'completion': '完成度(%)', 'is_milestone': '是否為里程碑'})
@@ -134,25 +134,9 @@ with st.sidebar.expander("📍 區域與廠商管理"):
                 st.session_state.subcontractors.remove(ds)
                 st.rerun()
             else: st.error("⚠️ 該廠商尚有任務使用中")
-                # 1. 確保日期欄位是正宗的 datetime.date 物件 (解決 DateColumn 報錯)
-date_cols = ['預定開始', '預定完成', '實際開始', '實際完成'] # 請換成你實際的日期欄位名稱
-for col in date_cols:
-    if col in current_tasks.columns:
-        current_tasks[col] = pd.to_datetime(current_tasks[col], errors='coerce').dt.date
-
-# 2. 確保 Checkbox 欄位是嚴格的 Boolean (解決 CheckboxColumn 報錯)
-if '是否為里程碑' in current_tasks.columns:
-    current_tasks['是否為里程碑'] = current_tasks['是否為里程碑'].fillna(False).astype(bool)
-
-# 3. 確保數字欄位是整數或浮點數 (解決 NumberColumn 報錯)
-if '完成度(%)' in current_tasks.columns:
-    current_tasks['完成度(%)'] = pd.to_numeric(current_tasks['完成度(%)'], errors='coerce').fillna(0).astype(int)
-
-# --- 轉換完成後，再丟給 data_editor ---
-edited_tasks = st.data_editor(current_tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
 
 # ==========================================
-# 5. 施工任務管理 (💡 統一為單一強大表格)
+# 5. 施工任務管理 (💡 徹底消滅閃退的嚴格型別綁定)
 # ==========================================
 st.header("🧱 施工任務管理")
 
@@ -168,15 +152,24 @@ col_cfg_task = {
     "是否為里程碑": st.column_config.CheckboxColumn("⭐ 里程碑", default=False)
 }
 
-# 取得最新的畫面狀態
-current_tasks = st.session_state.tasks.copy()
-edited_tasks = st.data_editor(current_tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
+# 💡 直接對底層狀態做型別校正，不使用 .copy()，這是防止閃退的核心！
+for d_col in ['預定開始', '預定完成', '實際開始', '實際完成']:
+    st.session_state.tasks[d_col] = pd.to_datetime(st.session_state.tasks[d_col], errors='coerce').dt.date
+st.session_state.tasks['是否為里程碑'] = st.session_state.tasks['是否為里程碑'].fillna(False).astype(bool)
+st.session_state.tasks['完成度(%)'] = pd.to_numeric(st.session_state.tasks['完成度(%)'], errors='coerce').fillna(0).astype(int)
 
-# 自動滿百邏輯
-edited_tasks.loc[edited_tasks['實際完成'].notnull(), '完成度(%)'] = 100
+edited_tasks = st.data_editor(st.session_state.tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
 
-if not edited_tasks.equals(current_tasks):
-    st.session_state.tasks = edited_tasks # 無條件保留狀態，徹底消滅閃退
+# 自動滿百邏輯 (若有改變需要重整 UI)
+has_changed = False
+for idx, row in edited_tasks.iterrows():
+    if pd.notnull(row['實際完成']) and row['完成度(%)'] != 100:
+        edited_tasks.at[idx, '完成度(%)'] = 100
+        has_changed = True
+
+# 若資料有異動，存檔並同步
+if not edited_tasks.equals(st.session_state.tasks) or has_changed:
+    st.session_state.tasks = edited_tasks
     
     clean_t = edited_tasks.dropna(subset=['施工項目', '預定開始', '預定完成'])
     invalid_t = [i+1 for i, r in clean_t.iterrows() if str(r['區域']) not in st.session_state.regions or str(r['施工廠商']) not in st.session_state.subcontractors]
@@ -193,14 +186,15 @@ if not edited_tasks.equals(current_tasks):
                     "is_milestone": bool(r['是否為里程碑']), 
                     "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), "completion": comp_int
                 })
-            
             supabase.table("tasks").delete().neq("id", -1).execute()
             if up_t: supabase.table("tasks").insert(up_t).execute()
         except Exception as e: pass
     else: st.error(f"施工清單第 {invalid_t} 列廠商或區域名稱不合法")
+    
+    if has_changed: st.rerun()
 
 # ==========================================
-# 6. 試車任務管理 (💡 統一表格 + 支援里程碑)
+# 6. 試車任務管理 (💡 支援里程碑與防閃退)
 # ==========================================
 st.header("🧪 試車任務管理")
 
@@ -215,13 +209,22 @@ col_cfg_comm = {
     "是否為里程碑": st.column_config.CheckboxColumn("⭐ 里程碑", default=False)
 }
 
-current_c_tasks = st.session_state.comm_tasks.copy()
-edited_comm = st.data_editor(current_c_tasks, column_config=col_cfg_comm, num_rows="dynamic", use_container_width=True, key="comm_editor")
+# 💡 同樣進行原址型別校正
+for d_col in ['預定開始', '預定完成', '實際開始', '實際完成']:
+    st.session_state.comm_tasks[d_col] = pd.to_datetime(st.session_state.comm_tasks[d_col], errors='coerce').dt.date
+st.session_state.comm_tasks['是否為里程碑'] = st.session_state.comm_tasks.get('是否為里程碑', False).fillna(False).astype(bool)
+st.session_state.comm_tasks['完成度(%)'] = pd.to_numeric(st.session_state.comm_tasks['完成度(%)'], errors='coerce').fillna(0).astype(int)
 
-edited_comm.loc[edited_comm['實際完成'].notnull(), '完成度(%)'] = 100
+edited_comm = st.data_editor(st.session_state.comm_tasks, column_config=col_cfg_comm, num_rows="dynamic", use_container_width=True, key="comm_editor")
 
-if not edited_comm.equals(current_c_tasks):
-    st.session_state.comm_tasks = edited_comm # 無條件保留狀態
+has_changed_c = False
+for idx, row in edited_comm.iterrows():
+    if pd.notnull(row['實際完成']) and row['完成度(%)'] != 100:
+        edited_comm.at[idx, '完成度(%)'] = 100
+        has_changed_c = True
+
+if not edited_comm.equals(st.session_state.comm_tasks) or has_changed_c:
+    st.session_state.comm_tasks = edited_comm
     
     clean_c = edited_comm.dropna(subset=['試車項目', '預定開始', '預定完成'])
     invalid_c = [i+1 for i, r in clean_c.iterrows() if str(r['區域']) not in st.session_state.regions]
@@ -242,9 +245,11 @@ if not edited_comm.equals(current_c_tasks):
             if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
         except Exception as e: pass
     else: st.error(f"試車清單第 {invalid_c} 列區域名稱不合法")
+    
+    if has_changed_c: st.rerun()
 
 # ==========================================
-# 7. 圖表生成 (💡 支援試車里程碑標記)
+# 7. 圖表生成 (💡 支援雙表格里程碑)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -258,6 +263,7 @@ def draw_gantt(df, title, color_col):
     p_df['實際開始'] = pd.to_datetime(p_df['實際開始'], errors='coerce')
     p_df['實際完成'] = pd.to_datetime(p_df['實際完成'], errors='coerce')
     p_df['完成度(%)'] = p_df['完成度(%)'].fillna(0).astype(int)
+    p_df['是否為里程碑'] = p_df.get('是否為里程碑', False).fillna(False).astype(bool)
     p_df = p_df.sort_values("預定開始")
     
     planned_duration = p_df['預定完成'] - p_df['預定開始']
@@ -267,7 +273,7 @@ def draw_gantt(df, title, color_col):
     task_col = p_df.columns[1] 
 
     for idx, row in p_df.iterrows():
-        # 🌟 超前或延誤判定 (加入表情符號)
+        # 🌟 超前或延誤判定
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
             if row['實際完成'] < row['預定完成']:
                 p_df.loc[idx, task_col] = f"🧨 {row[task_col]}"
@@ -284,15 +290,14 @@ def draw_gantt(df, title, color_col):
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
     
-    p_df['是否為里程碑'] = p_df['是否為里程碑'].fillna(False).astype(bool)
     draw_df = p_df[~p_df['是否為里程碑']]
     if draw_df.empty: return st.warning("⚠️ 必須至少有一項「非里程碑」的任務才能建立座標軸！")
         
-    # 第一層：預定計畫 (透明底色)
+    # 第一層：預定計畫
     fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     fig.update_traces(opacity=0.3)
     
-    # 第二層：實際進度 (實色斜線，從實際開工日開始推移)
+    # 第二層：實際進度
     prog_df = draw_df.dropna(subset=['進度開始', '進度結束'])
     if not prog_df.empty:
         fig2 = px.timeline(prog_df, x_start="進度開始", x_end="進度結束", y=task_col, color=color_col, color_discrete_map=color_map)
@@ -303,7 +308,7 @@ def draw_gantt(df, title, color_col):
             
     fig.update_layout(barmode='overlay') 
     
-    # 第三層：里程碑 (現在施工與試車通用)
+    # 第三層：里程碑 (施工/試車 通用)
     leg_set = set(draw_df[color_col].unique()) if not draw_df.empty else set()
     for _, m in p_df[p_df['是否為里程碑']].iterrows():
         cat = m[color_col]
@@ -326,7 +331,6 @@ def draw_gantt(df, title, color_col):
                 name=cat, legendgroup=cat, showlegend=show_leg
             ))
 
-    # 今日線定位
     try: today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
     except: today = pd.Timestamp.now().normalize()
         
