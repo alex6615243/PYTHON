@@ -158,7 +158,7 @@ with st.sidebar.expander("📍 區域與廠商管理"):
             else: st.error("⚠️ 該廠商尚有任務使用中")
 
 # ==========================================
-# 5. 施工任務清單 (✅ 修復 NoneType 錯誤)
+# 5. 施工任務清單 (✅ 徹底修復資料閃退問題)
 # ==========================================
 st.header("🧱 施工任務清單")
 
@@ -171,11 +171,14 @@ col_cfg_task = {
     "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%"),
     "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
 }
+
+# 抓取表格最新狀態
 edited_tasks = st.data_editor(st.session_state.tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
 
 clean_current_t = st.session_state.tasks.dropna(subset=['施工項目', '開始時間', '完成時間']).copy()
 clean_edited_t = edited_tasks.dropna(subset=['施工項目', '開始時間', '完成時間']).copy()
 
+# 判斷完整的資料是否有變更，有變更才寫入資料庫
 if not clean_edited_t.equals(clean_current_t):
     invalid_t = [i+1 for i, r in clean_edited_t.iterrows() if str(r['區域']) not in st.session_state.regions or str(r['施工廠商']) not in st.session_state.subcontractors]
     if not invalid_t:
@@ -185,7 +188,6 @@ if not clean_edited_t.equals(clean_current_t):
                 s_t = r['開始時間'].isoformat() if hasattr(r['開始時間'], 'isoformat') else str(r['開始時間'])
                 e_t = r['完成時間'].isoformat() if hasattr(r['完成時間'], 'isoformat') else str(r['完成時間'])
                 
-                # 🛡️ 安全取得完成度，遇到 None 就預設為 0
                 comp_val = r.get('完成度(%)', 0)
                 comp_int = 0 if pd.isna(comp_val) or comp_val == "" else int(float(comp_val))
                 
@@ -197,13 +199,16 @@ if not clean_edited_t.equals(clean_current_t):
             
             supabase.table("tasks").delete().neq("id", -1).execute()
             if up_t: supabase.table("tasks").insert(up_t).execute()
-            st.session_state.tasks = edited_tasks
             st.toast("施工清單已同步", icon="🏗️")
         except Exception as e: st.error(f"施工同步發生錯誤: {e}")
     else: st.error(f"施工清單第 {invalid_t} 列廠商或區域名稱不合法")
 
+# 💡 核心修復點：無條件將畫面狀態存回 Session State
+# 這樣一來，即使是打字打到一半的空白列，也會被安全保留到下一次重整中！
+st.session_state.tasks = edited_tasks
+
 # ==========================================
-# 6. 試車任務清單 (✅ 修復 NoneType 錯誤)
+# 6. 試車任務清單 (✅ 徹底修復資料閃退問題)
 # ==========================================
 st.header("🧪 試車任務清單")
 col_cfg_comm = {
@@ -213,6 +218,7 @@ col_cfg_comm = {
     "完成時間": st.column_config.DateColumn("完成時間", format="MM/DD", required=True),
     "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
 }
+
 edited_comm = st.data_editor(st.session_state.comm_tasks, column_config=col_cfg_comm, num_rows="dynamic", use_container_width=True, key="comm_editor")
 
 clean_current_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '開始時間', '完成時間']).copy()
@@ -227,7 +233,6 @@ if not clean_edited_c.equals(clean_current_c):
                 s_d = r['開始時間'].isoformat() if hasattr(r['開始時間'], 'isoformat') else str(r['開始時間'])
                 e_d = r['完成時間'].isoformat() if hasattr(r['完成時間'], 'isoformat') else str(r['完成時間'])
                 
-                # 🛡️ 安全取得完成度，遇到 None 就預設為 0
                 comp_val = r.get('完成度(%)', 0)
                 comp_int = 0 if pd.isna(comp_val) or comp_val == "" else int(float(comp_val))
                 
@@ -238,13 +243,15 @@ if not clean_edited_c.equals(clean_current_c):
             
             supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
             if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
-            st.session_state.comm_tasks = edited_comm
             st.toast("試車清單已同步", icon="🧪")
         except Exception as e: st.error(f"試車同步發生錯誤: {e}")
     else: st.error(f"試車清單第 {invalid_c} 列區域名稱不合法")
 
+# 💡 核心修復點：無條件將畫面狀態存回 Session State
+st.session_state.comm_tasks = edited_comm
+
 # ==========================================
-# 7. 圖表生成 
+# 7. 圖表生成
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -343,7 +350,14 @@ with st.sidebar.expander("💾 檔案管理"):
     st.divider()
     bn = st.text_input("存檔名稱", key="bn_in")
     if construction_button("💾 立即存檔", key="btn_save_snap"):
-        snap = {"tasks": st.session_state.tasks.to_json(orient='records', date_format='iso'), "comm": st.session_state.comm_tasks.to_json(orient='records', date_format='iso')}
+        # 💡 防呆：只把「填寫完成的健康資料」做成系統快照，避免未來回復時報錯
+        clean_snap_t = st.session_state.tasks.dropna(subset=['施工項目', '開始時間', '完成時間'])
+        clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '開始時間', '完成時間'])
+        
+        snap = {
+            "tasks": clean_snap_t.to_json(orient='records', date_format='iso'), 
+            "comm": clean_snap_c.to_json(orient='records', date_format='iso')
+        }
         supabase.table("tasks_backups").insert({"backup_name": bn if bn else "自動備份", "data_json": json.dumps(snap)}).execute()
         st.toast("已建立雲端存檔")
         st.rerun()
