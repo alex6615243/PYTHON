@@ -45,7 +45,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 按鈕 Helper 函數 ---
 def construction_button(label, key):
     st.markdown('<div id="blue-btn"></div>', unsafe_allow_html=True)
     return st.button(label, key=key, use_container_width=True)
@@ -55,7 +54,7 @@ def comm_button(label, key):
     return st.button(label, key=key, use_container_width=True)
 
 # ==========================================
-# 2. Supabase 初始化與資料處理
+# 2. Supabase 初始化與資料處理 (💡 新增完成度解析)
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -69,24 +68,26 @@ def load_data(table_name="tasks"):
     res = supabase.table(table_name).select("*").execute()
     df = pd.DataFrame(res.data)
     if table_name == "tasks":
-        cols = ['區域', '施工項目', '施工廠商', '開始時間', '完成時間', '是否為里程碑']
+        cols = ['區域', '施工項目', '施工廠商', '開始時間', '完成時間', '完成度(%)', '是否為里程碑']
         if not df.empty:
-            df = df.rename(columns={'task_name': '施工項目', 'subcontractor': '施工廠商', 'start_date': '開始時間', 'end_date': '完成時間', 'region': '區域', 'is_milestone': '是否為里程碑'})
+            df = df.rename(columns={'task_name': '施工項目', 'subcontractor': '施工廠商', 'start_date': '開始時間', 'end_date': '完成時間', 'region': '區域', 'is_milestone': '是否為里程碑', 'completion': '完成度(%)'})
             for c in cols:
-                if c not in df.columns: df[c] = None
+                if c not in df.columns: df[c] = 0 if c == '完成度(%)' else None
             df['開始時間'] = pd.to_datetime(df['開始時間']).dt.date
             df['完成時間'] = pd.to_datetime(df['完成時間']).dt.date
             df['是否為里程碑'] = df['是否為里程碑'].fillna(False).astype(bool)
+            df['完成度(%)'] = df['完成度(%)'].fillna(0).astype(int)
             return df[cols]
         return pd.DataFrame(columns=cols)
     else:
-        cols = ['區域', '試車項目', '開始時間', '完成時間']
+        cols = ['區域', '試車項目', '開始時間', '完成時間', '完成度(%)']
         if not df.empty:
-            df = df.rename(columns={'test_item': '試車項目', 'start_date': '開始時間', 'end_date': '完成時間', 'region': '區域'})
+            df = df.rename(columns={'test_item': '試車項目', 'start_date': '開始時間', 'end_date': '完成時間', 'region': '區域', 'completion': '完成度(%)'})
             for c in cols:
-                if c not in df.columns: df[c] = None
+                if c not in df.columns: df[c] = 0 if c == '完成度(%)' else None
             df['開始時間'] = pd.to_datetime(df['開始時間']).dt.date
             df['完成時間'] = pd.to_datetime(df['完成時間']).dt.date
+            df['完成度(%)'] = df['完成度(%)'].fillna(0).astype(int)
             return df[cols]
         return pd.DataFrame(columns=cols)
 
@@ -103,7 +104,7 @@ def load_project_name():
 # ==========================================
 # 3. 初始化設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="BTG9/10")
+st.set_page_config(layout="wide", page_title="營建與試車管理系統")
 if 'tasks' not in st.session_state: st.session_state.tasks = load_data("tasks")
 if 'comm_tasks' not in st.session_state: st.session_state.comm_tasks = load_data("commissioning_tasks")
 if 'regions' not in st.session_state: st.session_state.regions = load_list("regions")
@@ -157,7 +158,7 @@ with st.sidebar.expander("📍 區域與廠商管理"):
             else: st.error("⚠️ 該廠商尚有任務使用中")
 
 # ==========================================
-# 5. 施工任務清單
+# 5. 施工任務清單 (💡 新增完成度欄位與同步)
 # ==========================================
 st.header("🧱 施工任務清單")
 
@@ -167,6 +168,7 @@ col_cfg_task = {
     "施工廠商": st.column_config.SelectboxColumn("施工廠商", options=st.session_state.subcontractors, required=True),
     "開始時間": st.column_config.DateColumn("開始時間", format="MM/DD", required=True),
     "完成時間": st.column_config.DateColumn("完成時間", format="MM/DD", required=True),
+    "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%"),
     "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
 }
 edited_tasks = st.data_editor(st.session_state.tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
@@ -182,11 +184,14 @@ if not clean_edited_t.equals(clean_current_t):
             for _, r in clean_edited_t.iterrows():
                 s_t = r['開始時間'].isoformat() if hasattr(r['開始時間'], 'isoformat') else str(r['開始時間'])
                 e_t = r['完成時間'].isoformat() if hasattr(r['完成時間'], 'isoformat') else str(r['完成時間'])
-                up_t.append({"task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), "start_date": s_t, "end_date": e_t, "region": str(r['區域']), "is_milestone": bool(r['是否為里程碑'])})
+                up_t.append({
+                    "task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), 
+                    "start_date": s_t, "end_date": e_t, "region": str(r['區域']), 
+                    "is_milestone": bool(r['是否為里程碑']), "completion": int(r.get('完成度(%)', 0))
+                })
             
             supabase.table("tasks").delete().neq("id", -1).execute()
             if up_t: supabase.table("tasks").insert(up_t).execute()
-            
             st.session_state.tasks = edited_tasks
             st.toast("施工清單已同步", icon="🏗️")
         except Exception as e: st.error(f"施工同步發生錯誤: {e}")
@@ -201,6 +206,7 @@ col_cfg_comm = {
     "試車項目": st.column_config.TextColumn("試車項目", required=True),
     "開始時間": st.column_config.DateColumn("開始時間", format="MM/DD", required=True),
     "完成時間": st.column_config.DateColumn("完成時間", format="MM/DD", required=True),
+    "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
 }
 edited_comm = st.data_editor(st.session_state.comm_tasks, column_config=col_cfg_comm, num_rows="dynamic", use_container_width=True, key="comm_editor")
 
@@ -215,18 +221,20 @@ if not clean_edited_c.equals(clean_current_c):
             for _, r in clean_edited_c.iterrows():
                 s_d = r['開始時間'].isoformat() if hasattr(r['開始時間'], 'isoformat') else str(r['開始時間'])
                 e_d = r['完成時間'].isoformat() if hasattr(r['完成時間'], 'isoformat') else str(r['完成時間'])
-                up_c.append({"test_item": str(r['試車項目']), "start_date": s_d, "end_date": e_d, "region": str(r['區域'])})
+                up_c.append({
+                    "test_item": str(r['試車項目']), "start_date": s_d, "end_date": e_d, 
+                    "region": str(r['區域']), "completion": int(r.get('完成度(%)', 0))
+                })
             
             supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
             if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
-            
             st.session_state.comm_tasks = edited_comm
             st.toast("試車清單已同步", icon="🧪")
         except Exception as e: st.error(f"試車同步發生錯誤: {e}")
     else: st.error(f"試車清單第 {invalid_c} 列區域名稱不合法")
 
 # ==========================================
-# 7. 圖表生成 (精準對齊刻度版)
+# 7. 圖表生成 (💡 核心：底圖 + 進度斜線 + 打勾里程碑)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -237,35 +245,65 @@ def draw_gantt(df, title, color_col, is_comm=False):
     
     p_df['開始時間'] = pd.to_datetime(p_df['開始時間'])
     p_df['完成時間'] = pd.to_datetime(p_df['完成時間'])
+    p_df['完成度(%)'] = p_df['完成度(%)'].fillna(0).astype(int)
     p_df = p_df.sort_values("開始時間")
+    
+    # 計算進度斜線的「相對結束時間」
+    delta = p_df['完成時間'] - p_df['開始時間']
+    p_df['進度時間'] = p_df['開始時間'] + delta * (p_df['完成度(%)'] / 100.0)
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
     
     if not is_comm:
         p_df['是否為里程碑'] = p_df['是否為里程碑'].fillna(False).astype(bool)
         draw_df = p_df[~p_df['是否為里程碑']]
-        if draw_df.empty: 
-            return st.warning("⚠️ 必須至少有一項「非里程碑」的任務才能建立座標軸！")
+        if draw_df.empty: return st.warning("⚠️ 必須至少有一項「非里程碑」的任務才能建立座標軸！")
     else:
         draw_df = p_df
         
+    # 第一層：底層透明總長度 (代表預計工期)
     fig = px.timeline(draw_df, x_start="開始時間", x_end="完成時間", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
+    fig.update_traces(opacity=0.3) # 底色變淡
     
+    # 第二層：進度斜線實體疊加 (代表已完成比例)
+    comp_df = draw_df[draw_df['完成度(%)'] > 0]
+    if not comp_df.empty:
+        fig2 = px.timeline(comp_df, x_start="開始時間", x_end="進度時間", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map)
+        fig2.update_traces(opacity=1.0, marker_pattern_shape="/") # 實色 + 畫上斜線
+        for tr in fig2.data:
+            tr.showlegend = False # 避免圖例重複
+            fig.add_trace(tr)
+            
+    fig.update_layout(barmode='overlay') # 確保兩層甘特條疊加
+    
+    # 第三層：打勾或星星的里程碑
     if not is_comm: 
-        leg_set = set(draw_df[color_col].unique())
+        leg_set = set(draw_df[color_col].unique()) if not draw_df.empty else set()
         for _, m in p_df[p_df['是否為里程碑']].iterrows():
             cat = m[color_col]
             show_leg = cat not in leg_set
             if show_leg: leg_set.add(cat)
+            
+            # 判斷是否 100% 完成
+            is_done = m['完成度(%)'] >= 100
+            if is_done:
+                mode_style = 'text'
+                text_label = f"✅ {m['開始時間'].strftime('%m/%d')}"
+                marker_style = None
+            else:
+                mode_style = 'markers+text'
+                text_label = f" {m['開始時間'].strftime('%m/%d')}"
+                marker_style = dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1))
+                
             fig.add_trace(go.Scatter(
-                x=[m['開始時間']], y=[m[p_df.columns[1]]], mode='markers+text',
-                marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)),
-                text=[f" {m['開始時間'].strftime('%m/%d')}"], textposition='middle right', 
-                textfont=dict(color='black', size=12),
+                x=[m['開始時間']], y=[m[p_df.columns[1]]], mode=mode_style,
+                marker=marker_style,
+                text=[text_label], textposition='middle right' if not is_done else 'middle center', 
+                textfont=dict(color='black' if not is_done else 'green', size=12 if not is_done else 16),
                 name=cat, legendgroup=cat, showlegend=show_leg
             ))
 
-    # 💡 核心修正：利用 normalize() 將時、分、秒歸零，強迫對齊 00:00 刻度線
+    # 今日線定位
     try:
         today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
     except:
@@ -276,12 +314,10 @@ def draw_gantt(df, title, color_col, is_comm=False):
 
     fig.update_yaxes(categoryorder='array', categoryarray=p_df[p_df.columns[1]].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
     fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12))
+    
+    # 隱藏多餘選擇工具，保留乾淨圖表
+    chart_config = {'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']}
     fig.update_layout(plot_bgcolor="#f0f0f0", paper_bgcolor="#f0f0f0", font=dict(color="black"), title=dict(text=title, font=dict(size=22)))
-    # 統一控制列設定：移除容易產生差異的圈選工具，並隱藏 Plotly Logo
-    chart_config = {
-        'displaylogo': False,
-        'modeBarButtonsToRemove': ['lasso2d', 'select2d'] 
-    }
     st.plotly_chart(fig, use_container_width=True, config=chart_config)
 
 with tab_g1:
@@ -294,7 +330,7 @@ with tab_g2:
         draw_gantt(edited_comm, f"🧪 {st.session_state.project_name} - 試車排程總表", "區域", is_comm=True)
 
 # ==========================================
-# 8. 系統存檔與回復
+# 8. 系統存檔與回復 (💡 備份包含 completion)
 # ==========================================
 st.sidebar.divider()
 with st.sidebar.expander("💾 檔案管理"):
@@ -321,12 +357,12 @@ with st.sidebar.expander("💾 檔案管理"):
                     full_data = json.loads(snap_res.data[0]['data_json'])
                     
                     df_t = pd.read_json(io.StringIO(full_data['tasks']))
-                    up_t = [{"task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": pd.to_datetime(r['開始時間']).date().isoformat(), "end_date": pd.to_datetime(r['完成時間']).date().isoformat(), "region": r['區域'], "is_milestone": bool(r['是否為里程碑'])} for _, r in df_t.iterrows()]
+                    up_t = [{"task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": pd.to_datetime(r['開始時間']).date().isoformat(), "end_date": pd.to_datetime(r['完成時間']).date().isoformat(), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "completion": int(r.get('完成度(%)', 0))} for _, r in df_t.iterrows()]
                     supabase.table("tasks").delete().neq("id", -1).execute()
                     if up_t: supabase.table("tasks").insert(up_t).execute()
                     
                     df_c = pd.read_json(io.StringIO(full_data['comm']))
-                    up_c = [{"test_item": r['試車項目'], "start_date": pd.to_datetime(r['開始時間']).date().isoformat(), "end_date": pd.to_datetime(r['完成時間']).date().isoformat(), "region": r['區域']} for _, r in df_c.iterrows()]
+                    up_c = [{"test_item": r['試車項目'], "start_date": pd.to_datetime(r['開始時間']).date().isoformat(), "end_date": pd.to_datetime(r['完成時間']).date().isoformat(), "region": r['區域'], "completion": int(r.get('完成度(%)', 0))} for _, r in df_c.iterrows()]
                     supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
                     if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
                     
