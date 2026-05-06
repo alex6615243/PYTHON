@@ -103,7 +103,7 @@ def load_project_name():
 # ==========================================
 # 3. 初始化設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="營建與試車管理系統")
+st.set_page_config(layout="wide", page_title="BTG9/10")
 if 'tasks' not in st.session_state: st.session_state.tasks = load_data("tasks")
 if 'comm_tasks' not in st.session_state: st.session_state.comm_tasks = load_data("commissioning_tasks")
 if 'regions' not in st.session_state: st.session_state.regions = load_list("regions")
