@@ -134,6 +134,22 @@ with st.sidebar.expander("📍 區域與廠商管理"):
                 st.session_state.subcontractors.remove(ds)
                 st.rerun()
             else: st.error("⚠️ 該廠商尚有任務使用中")
+                # 1. 確保日期欄位是正宗的 datetime.date 物件 (解決 DateColumn 報錯)
+date_cols = ['預定開始', '預定完成', '實際開始', '實際完成'] # 請換成你實際的日期欄位名稱
+for col in date_cols:
+    if col in current_tasks.columns:
+        current_tasks[col] = pd.to_datetime(current_tasks[col], errors='coerce').dt.date
+
+# 2. 確保 Checkbox 欄位是嚴格的 Boolean (解決 CheckboxColumn 報錯)
+if '是否為里程碑' in current_tasks.columns:
+    current_tasks['是否為里程碑'] = current_tasks['是否為里程碑'].fillna(False).astype(bool)
+
+# 3. 確保數字欄位是整數或浮點數 (解決 NumberColumn 報錯)
+if '完成度(%)' in current_tasks.columns:
+    current_tasks['完成度(%)'] = pd.to_numeric(current_tasks['完成度(%)'], errors='coerce').fillna(0).astype(int)
+
+# --- 轉換完成後，再丟給 data_editor ---
+edited_tasks = st.data_editor(current_tasks, column_config=col_cfg_task, num_rows="dynamic", use_container_width=True, key="tasks_editor")
 
 # ==========================================
 # 5. 施工任務管理 (💡 統一為單一強大表格)
