@@ -28,13 +28,12 @@ def comm_button(label, key):
     st.markdown('<div id="green-btn"></div>', unsafe_allow_html=True)
     return st.button(label, key=key, use_container_width=True)
 
-# Helper: 安全處理日期格式
 def safe_date(d):
     if pd.isna(d) or d == "" or d is None: return None
     return d.isoformat() if hasattr(d, 'isoformat') else str(d)
 
 # ==========================================
-# 2. Supabase 初始化與資料處理 (💡 新增實際日期欄位)
+# 2. Supabase 初始化與資料處理
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -136,11 +135,10 @@ with st.sidebar.expander("📍 區域與廠商管理"):
             else: st.error("⚠️ 該廠商尚有任務使用中")
 
 # ==========================================
-# 5. 施工任務管理 (💡 拆分預定與實際)
+# 5. 施工任務管理
 # ==========================================
 st.header("🧱 施工任務管理")
 
-# --- 表格 1：預定計畫 ---
 st.subheader("📋 1. 預定計畫 (新增/刪除任務)")
 col_cfg_plan = {
     "區域": st.column_config.SelectboxColumn("區域", options=st.session_state.regions, required=True),
@@ -153,30 +151,23 @@ col_cfg_plan = {
 plan_cols = ['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']
 ed_plan = st.data_editor(st.session_state.tasks[plan_cols], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, key="ed_plan")
 
-# --- 表格 2：實際進度 ---
 st.subheader("📈 2. 實際進度回報")
 col_cfg_act = {
-    "施工項目": st.column_config.TextColumn("施工項目", disabled=True), # 鎖定名稱
+    "施工項目": st.column_config.TextColumn("施工項目", disabled=True),
     "實際開始": st.column_config.DateColumn("實際開工", format="MM/DD"),
     "實際完成": st.column_config.DateColumn("實際完成", format="MM/DD"),
     "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
 }
-act_cols = ['施工項目', '實際開始', '實際完成', '完成度(%)']
 
-# 動態生成底層資料給實際進度表 (確保與預定表行數一致)
 act_df_sync = ed_plan[['施工項目']].copy()
 for col in ['實際開始', '實際完成', '完成度(%)']:
     act_df_sync[col] = st.session_state.tasks[col] if col in st.session_state.tasks else None
 
 ed_act = st.data_editor(act_df_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, key="ed_act")
 
-# --- 施工資料整合與同步 ---
 new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
-
-# 自動 100% 邏輯：如果有實際完成日，強制 100%
 new_tasks.loc[new_tasks['實際完成'].notnull(), '完成度(%)'] = 100
-
-st.session_state.tasks = new_tasks # 無條件保留 UI 狀態 (防閃退)
+st.session_state.tasks = new_tasks 
 
 clean_t = new_tasks.dropna(subset=['施工項目', '預定開始', '預定完成']).copy()
 if not clean_t.empty:
@@ -197,7 +188,7 @@ if not clean_t.empty:
     except Exception as e: pass
 
 # ==========================================
-# 6. 試車任務管理 (💡 拆分預定與實際)
+# 6. 試車任務管理
 # ==========================================
 st.header("🧪 試車任務管理")
 
@@ -226,7 +217,7 @@ ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_c_act, num_rows="fix
 
 new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
 new_c_tasks.loc[new_c_tasks['實際完成'].notnull(), '完成度(%)'] = 100
-st.session_state.comm_tasks = new_c_tasks # 防閃退
+st.session_state.comm_tasks = new_c_tasks 
 
 clean_c = new_c_tasks.dropna(subset=['試車項目', '預定開始', '預定完成']).copy()
 if not clean_c.empty:
@@ -245,7 +236,7 @@ if not clean_c.empty:
     except Exception as e: pass
 
 # ==========================================
-# 7. 圖表生成 (💡 核心：動態進度推移與 ✅ 里程碑)
+# 7. 圖表生成 (💡 新增 🧨 / 💀 警示符號邏輯)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -261,18 +252,26 @@ def draw_gantt(df, title, color_col, is_comm=False):
     p_df['完成度(%)'] = p_df['完成度(%)'].fillna(0).astype(int)
     p_df = p_df.sort_values("預定開始")
     
-    # 💡 核心邏輯：計算實際進度的結束點 (向後推移概念)
     planned_duration = p_df['預定完成'] - p_df['預定開始']
     p_df['進度開始'] = p_df['實際開始']
     p_df['進度結束'] = pd.NaT
     
+    task_col = p_df.columns[1] # 取得項目名稱欄位名稱 ('施工項目' 或 '試車項目')
+
     for idx, row in p_df.iterrows():
+        # 🌟 超前或延誤判定 (加入表情符號)
+        if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
+            if row['實際完成'] < row['預定完成']:
+                p_df.loc[idx, task_col] = f"🧨 {row[task_col]}"
+            elif row['實際完成'] > row['預定完成']:
+                p_df.loc[idx, task_col] = f"💀 {row[task_col]}"
+
+        # 🌟 實際進度推移計算
         if pd.notnull(row['實際開始']):
             if pd.notnull(row['實際完成']):
                 p_df.loc[idx, '進度結束'] = row['實際完成']
-                p_df.loc[idx, '完成度(%)'] = 100 # 強制 100%
+                p_df.loc[idx, '完成度(%)'] = 100
             else:
-                # 實際進度 = 實際開始日 + (預定工期 × 完成度百分比) -> 若延遲會自動超出預定底色！
                 p_df.loc[idx, '進度結束'] = row['實際開始'] + planned_duration[idx] * (row['完成度(%)'] / 100.0)
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
@@ -285,13 +284,13 @@ def draw_gantt(df, title, color_col, is_comm=False):
         draw_df = p_df
         
     # 第一層：預定計畫 (透明底色)
-    fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
+    fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     fig.update_traces(opacity=0.3)
     
     # 第二層：實際進度 (實色斜線，從實際開工日開始推移)
     prog_df = draw_df.dropna(subset=['進度開始', '進度結束'])
     if not prog_df.empty:
-        fig2 = px.timeline(prog_df, x_start="進度開始", x_end="進度結束", y=draw_df.columns[1], color=color_col, color_discrete_map=color_map)
+        fig2 = px.timeline(prog_df, x_start="進度開始", x_end="進度結束", y=task_col, color=color_col, color_discrete_map=color_map)
         fig2.update_traces(opacity=1.0, marker_pattern_shape="/") 
         for tr in fig2.data:
             tr.showlegend = False 
@@ -307,18 +306,16 @@ def draw_gantt(df, title, color_col, is_comm=False):
             show_leg = cat not in leg_set
             if show_leg: leg_set.add(cat)
             
-            # 如果有實際完成日，代表完成，標示 ✅ 在實際完成的那天
             if pd.notnull(m['實際完成']):
                 fig.add_trace(go.Scatter(
-                    x=[m['實際完成']], y=[m[p_df.columns[1]]], mode='text',
+                    x=[m['實際完成']], y=[m[task_col]], mode='text',
                     text=[f"✅ {m['實際完成'].strftime('%m/%d')}"], textposition='middle center', 
                     textfont=dict(color='green', size=16, weight='bold'),
                     name=cat, legendgroup=cat, showlegend=show_leg
                 ))
             else:
-                # 尚未完成，標示 ⭐ 在預定開始的那天
                 fig.add_trace(go.Scatter(
-                    x=[m['預定開始']], y=[m[p_df.columns[1]]], mode='markers+text',
+                    x=[m['預定開始']], y=[m[task_col]], mode='markers+text',
                     marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)),
                     text=[f" {m['預定開始'].strftime('%m/%d')}"], textposition='middle right', 
                     textfont=dict(color='black', size=12),
@@ -332,7 +329,7 @@ def draw_gantt(df, title, color_col, is_comm=False):
     fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
     fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
 
-    fig.update_yaxes(categoryorder='array', categoryarray=p_df[p_df.columns[1]].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
+    fig.update_yaxes(categoryorder='array', categoryarray=p_df[task_col].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
     fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12))
     
     chart_config = {'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']}
