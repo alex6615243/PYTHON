@@ -60,7 +60,6 @@ def load_data(table_name="tasks"):
             return df[cols]
         return pd.DataFrame(columns=cols)
     else:
-        # 💡 加入 '是否為里程碑' 欄位解析
         cols = ['區域', '試車項目', '預定開始', '預定完成', '實際開始', '實際完成', '完成度(%)', '是否為里程碑']
         if not df.empty:
             df = df.rename(columns={'test_item': '試車項目', 'start_date': '預定開始', 'end_date': '預定完成', 'region': '區域', 'actual_start': '實際開始', 'actual_end': '實際完成', 'completion': '完成度(%)', 'is_milestone': '是否為里程碑'})
@@ -68,6 +67,7 @@ def load_data(table_name="tasks"):
                 if c not in df.columns: df[c] = 0 if c == '完成度(%)' else None
             for d in ['預定開始', '預定完成', '實際開始', '實際完成']:
                 df[d] = pd.to_datetime(df[d]).dt.date
+            if '是否為里程碑' not in df.columns: df['是否為里程碑'] = False
             df['是否為里程碑'] = df['是否為里程碑'].fillna(False).astype(bool)
             df['完成度(%)'] = df['完成度(%)'].fillna(0).astype(int)
             return df[cols]
@@ -141,6 +141,16 @@ with st.sidebar.expander("📍 區域與廠商管理"):
 # ==========================================
 st.header("🧱 施工任務管理")
 
+# 🛡️ [防呆修復] 預先處理施工表的型態
+for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
+    if col in st.session_state.tasks.columns:
+        st.session_state.tasks[col] = pd.to_datetime(st.session_state.tasks[col], errors='coerce').dt.date
+if '是否為里程碑' not in st.session_state.tasks.columns: 
+    st.session_state.tasks['是否為里程碑'] = False
+st.session_state.tasks['是否為里程碑'] = st.session_state.tasks['是否為里程碑'].fillna(False).astype(bool)
+if '完成度(%)' in st.session_state.tasks.columns:
+    st.session_state.tasks['完成度(%)'] = pd.to_numeric(st.session_state.tasks['完成度(%)'], errors='coerce').fillna(0).astype(int)
+
 st.subheader("📋 1. 預定計畫 (新增/刪除任務)")
 col_cfg_plan = {
     "區域": st.column_config.SelectboxColumn("區域", options=st.session_state.regions, required=True),
@@ -181,7 +191,7 @@ if not clean_t.empty:
             up_t.append({
                 "task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), 
                 "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": str(r['區域']), 
-                "is_milestone": bool(r['是否為里程碑']), 
+                "is_milestone": bool(r.get('是否為里程碑', False)), 
                 "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), "completion": comp_int
             })
         
@@ -194,8 +204,17 @@ if not clean_t.empty:
 # ==========================================
 st.header("🧪 試車任務管理")
 
+# 🛡️ [防呆修復] 預先處理試車表的型態
+for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
+    if col in st.session_state.comm_tasks.columns:
+        st.session_state.comm_tasks[col] = pd.to_datetime(st.session_state.comm_tasks[col], errors='coerce').dt.date
+if '是否為里程碑' not in st.session_state.comm_tasks.columns:
+    st.session_state.comm_tasks['是否為里程碑'] = False
+st.session_state.comm_tasks['是否為里程碑'] = st.session_state.comm_tasks['是否為里程碑'].fillna(False).astype(bool)
+if '完成度(%)' in st.session_state.comm_tasks.columns:
+    st.session_state.comm_tasks['完成度(%)'] = pd.to_numeric(st.session_state.comm_tasks['完成度(%)'], errors='coerce').fillna(0).astype(int)
+
 st.subheader("📋 1. 預定計畫 (新增/刪除任務)")
-# 💡 設定試車表的里程碑 CheckboxColumn
 col_cfg_c_plan = {
     "區域": st.column_config.SelectboxColumn("區域", options=st.session_state.regions, required=True),
     "試車項目": st.column_config.TextColumn("試車項目", required=True),
@@ -213,6 +232,7 @@ col_cfg_c_act = {
     "實際完成": st.column_config.DateColumn("實際完成", format="MM/DD"),
     "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
 }
+
 c_act_sync = ed_c_plan[['試車項目']].copy()
 for col in ['實際開始', '實際完成', '完成度(%)']:
     c_act_sync[col] = st.session_state.comm_tasks[col] if col in st.session_state.comm_tasks else None
@@ -241,12 +261,12 @@ if not clean_c.empty:
     except Exception as e: pass
 
 # ==========================================
-# 7. 圖表生成 (💡 支援全域里程碑與警示符號邏輯)
+# 7. 圖表生成
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
 
-def draw_gantt(df, title, color_col, is_comm=False):
+def draw_gantt(df, title, color_col):
     p_df = df.dropna(subset=[df.columns[1], '預定開始', '預定完成']).copy()
     if p_df.empty: return st.warning("請填寫資料")
     
@@ -261,17 +281,15 @@ def draw_gantt(df, title, color_col, is_comm=False):
     p_df['進度開始'] = p_df['實際開始']
     p_df['進度結束'] = pd.NaT
     
-    task_col = p_df.columns[1] # 取得項目名稱欄位名稱 ('施工項目' 或 '試車項目')
+    task_col = p_df.columns[1] 
 
     for idx, row in p_df.iterrows():
-        # 🌟 超前或延誤判定 (加入表情符號)
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
             if row['實際完成'] < row['預定完成']:
                 p_df.loc[idx, task_col] = f"🧨 {row[task_col]}"
             elif row['實際完成'] > row['預定完成']:
                 p_df.loc[idx, task_col] = f"💀 {row[task_col]}"
 
-        # 🌟 實際進度推移計算
         if pd.notnull(row['實際開始']):
             if pd.notnull(row['實際完成']):
                 p_df.loc[idx, '進度結束'] = row['實際完成']
@@ -281,17 +299,14 @@ def draw_gantt(df, title, color_col, is_comm=False):
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
     
-    # 💡 解除限制：施工圖與試車圖皆分離並隱藏里程碑底條
     p_df['是否為里程碑'] = p_df.get('是否為里程碑', False).fillna(False).astype(bool)
     draw_df = p_df[~p_df['是否為里程碑']]
     
     if draw_df.empty: return st.warning("⚠️ 必須至少有一項「非里程碑」的任務才能建立座標軸！")
         
-    # 第一層：預定計畫 (透明底色)
     fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     fig.update_traces(opacity=0.3)
     
-    # 第二層：實際進度 (實色斜線，從實際開工日開始推移)
     prog_df = draw_df.dropna(subset=['進度開始', '進度結束'])
     if not prog_df.empty:
         fig2 = px.timeline(prog_df, x_start="進度開始", x_end="進度結束", y=task_col, color=color_col, color_discrete_map=color_map)
@@ -302,7 +317,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
             
     fig.update_layout(barmode='overlay') 
     
-    # 第三層：里程碑 (⭐ 變 ✅ 邏輯 - 適用於施工與試車)
     leg_set = set(draw_df[color_col].unique()) if not draw_df.empty else set()
     for _, m in p_df[p_df['是否為里程碑']].iterrows():
         cat = m[color_col]
@@ -325,7 +339,6 @@ def draw_gantt(df, title, color_col, is_comm=False):
                 name=cat, legendgroup=cat, showlegend=show_leg
             ))
 
-    # 今日線定位
     try: today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
     except: today = pd.Timestamp.now().normalize()
         
@@ -346,7 +359,7 @@ with tab_g1:
 
 with tab_g2:
     if comm_button("✅ 生成試車甘特圖", key="run_g2"): 
-        draw_gantt(st.session_state.comm_tasks, f"🧪 {st.session_state.project_name} - 試車排程總表", "區域", is_comm=True)
+        draw_gantt(st.session_state.comm_tasks, f"🧪 {st.session_state.project_name} - 試車排程總表", "區域")
 
 # ==========================================
 # 8. 系統存檔與回復
