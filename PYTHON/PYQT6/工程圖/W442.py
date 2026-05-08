@@ -326,7 +326,7 @@ def draw_gantt(df, title, color_col):
         is_done = pd.notnull(m['實際完成'])
         
         # 建立專屬圖例名稱 (包含區域)
-        leg_name = f"✅ {region} (完成)" if is_done else f" {region} (里程碑)"
+        leg_name = f"✅ {region} (完成)" if is_done else f" {region} "
         show_leg = leg_name not in ms_leg_set
         if show_leg: ms_leg_set.add(leg_name)
         
