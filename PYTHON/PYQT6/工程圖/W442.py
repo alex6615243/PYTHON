@@ -131,7 +131,7 @@ with st.sidebar.expander("📍 區域與廠商管理"):
             else: st.error("⚠️ 該廠商尚有任務")
 
 # ==========================================
-# 5. 施工任務管理 (下拉選單 Layout)
+# 5. 施工任務管理
 # ==========================================
 with st.expander("🧱 施工任務管理", expanded=True):
     for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
@@ -169,7 +169,6 @@ with st.expander("🧱 施工任務管理", expanded=True):
 
     pre_sync_tasks = new_tasks.copy()
 
-    # 里程碑自動連動邏輯
     m_mask = new_tasks['是否為里程碑'] == True
     new_tasks.loc[m_mask, '預定完成'] = new_tasks.loc[m_mask, '預定開始']
     new_tasks.loc[m_mask, '實際完成'] = new_tasks.loc[m_mask, '實際開始']
@@ -204,7 +203,7 @@ with st.expander("🧱 施工任務管理", expanded=True):
     if needs_rerun_t: st.rerun()
 
 # ==========================================
-# 6. 試車任務管理 (下拉選單 Layout)
+# 6. 試車任務管理
 # ==========================================
 with st.expander("🧪 試車任務管理", expanded=True):
     for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
@@ -267,7 +266,7 @@ with st.expander("🧪 試車任務管理", expanded=True):
     if needs_rerun_c: st.rerun()
 
 # ==========================================
-# 7. 圖表生成
+# 7. 圖表生成 (💡 新增 HoverTemplate 強制顯示區域與廠商)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -287,12 +286,11 @@ def draw_gantt(df, title, color_col):
     task_col = p_df.columns[1] 
 
     for idx, row in p_df.iterrows():
-        # 🌟 直接使用 Timestamp 比大小，完美解決 TypeError
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
             if row['實際完成'] < row['預定完成']: 
                 p_df.loc[idx, task_col] = f"[提前完工!] {row[task_col]}"
             elif row['實際完成'] > row['預定完成']: 
-                p_df.loc[idx, task_col] = f"[Delay!] {row[task_col]}"
+                p_df.loc[idx, task_col] = f"[Delay] {row[task_col]}"
 
         if pd.notnull(row['實際開始']):
             if pd.notnull(row['實際完成']):
@@ -323,10 +321,25 @@ def draw_gantt(df, title, color_col):
         show_leg = cat not in leg_set
         if show_leg: leg_set.add(cat)
         
+        # 💡 建立豐富的懸浮提示框 (包含區域、廠商資訊)
+        vendor_info = f"<br>廠商: {m['施工廠商']}" if '施工廠商' in m else ""
+        hover_text = f"<b>里程碑：{m[task_col]}</b><br>區域: {m['區域']}{vendor_info}<br>日期: %{{x|%Y-%m-%d}}<extra></extra>"
+        
         if pd.notnull(m['實際完成']):
-            fig.add_trace(go.Scatter(x=[m['實際完成']], y=[m[task_col]], mode='text', text=[f"✅ {m['實際完成'].strftime('%m/%d')}"], textfont=dict(color='green', size=16, weight='bold'), name=cat, legendgroup=cat, showlegend=show_leg))
+            fig.add_trace(go.Scatter(
+                x=[m['實際完成']], y=[m[task_col]], mode='text', 
+                text=[f"✅ {m['實際完成'].strftime('%m/%d')}"], textfont=dict(color='green', size=16, weight='bold'), 
+                name=cat, legendgroup=cat, showlegend=show_leg,
+                hovertemplate=hover_text # 綁定提示框
+            ))
         else:
-            fig.add_trace(go.Scatter(x=[m['預定開始']], y=[m[task_col]], mode='markers+text', marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)), text=[f" {m['預定開始'].strftime('%m/%d')}"], textposition='middle right', textfont=dict(color='black', size=12), name=cat, legendgroup=cat, showlegend=show_leg))
+            fig.add_trace(go.Scatter(
+                x=[m['預定開始']], y=[m[task_col]], mode='markers+text', 
+                marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)), 
+                text=[f" {m['預定開始'].strftime('%m/%d')}"], textposition='middle right', textfont=dict(color='black', size=12), 
+                name=cat, legendgroup=cat, showlegend=show_leg,
+                hovertemplate=hover_text # 綁定提示框
+            ))
 
     today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
     fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
