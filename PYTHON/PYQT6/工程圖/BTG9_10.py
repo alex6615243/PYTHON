@@ -290,9 +290,9 @@ def draw_gantt(df, title, color_col):
         # 🌟 直接使用 Timestamp 比大小，完美解決 TypeError
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
             if row['實際完成'] < row['預定完成']: 
-                p_df.loc[idx, task_col] = f"提前完工! {row[task_col]}"
+                p_df.loc[idx, task_col] = f"[提前完工!] {row[task_col]}"
             elif row['實際完成'] > row['預定完成']: 
-                p_df.loc[idx, task_col] = f"delay {row[task_col]}"
+                p_df.loc[idx, task_col] = f"[Delay!] {row[task_col]}"
 
         if pd.notnull(row['實際開始']):
             if pd.notnull(row['實際完成']):
