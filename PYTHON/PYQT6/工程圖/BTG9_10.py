@@ -158,9 +158,10 @@ col_cfg_act = {
     "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
 }
 
+# 💡 修復點：移除 .dt.date
 act_sync = ed_plan[['施工項目']].copy()
-act_sync['實際開始'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['實際開始']).dt.date if not st.session_state.tasks.empty else None
-act_sync['實際完成'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['實際完成']).dt.date if not st.session_state.tasks.empty else None
+act_sync['實際開始'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['實際開始']) if not st.session_state.tasks.empty else None
+act_sync['實際完成'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['實際完成']) if not st.session_state.tasks.empty else None
 act_sync['完成度(%)'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['完成度(%)']).fillna(0).astype(int) if not st.session_state.tasks.empty else 0
 
 ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, key="ed_act")
@@ -212,9 +213,10 @@ col_cfg_c_plan = {
 ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, key="ed_c_plan")
 
 st.subheader("📈 2. 實際進度回報")
+# 💡 修復點：移除 .dt.date
 c_act_sync = ed_c_plan[['試車項目']].copy()
-c_act_sync['實際開始'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['實際開始']).dt.date if not st.session_state.comm_tasks.empty else None
-c_act_sync['實際完成'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['實際完成']).dt.date if not st.session_state.comm_tasks.empty else None
+c_act_sync['實際開始'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['實際開始']) if not st.session_state.comm_tasks.empty else None
+c_act_sync['實際完成'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['實際完成']) if not st.session_state.comm_tasks.empty else None
 c_act_sync['完成度(%)'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['完成度(%)']).fillna(0).astype(int) if not st.session_state.comm_tasks.empty else 0
 
 ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, key="ed_c_act")
@@ -246,7 +248,7 @@ if not clean_c.empty:
         st.error(f"⚠️ 試車資料庫寫入失敗: {e}")
 
 # ==========================================
-# 7. 圖表生成 (💡 修復 KeyError 問題)
+# 7. 圖表生成
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -261,7 +263,6 @@ def draw_gantt(df, title, color_col):
     p_df['實際完成'] = pd.to_datetime(p_df['實際完成'], errors='coerce')
     p_df = p_df.sort_values("預定開始")
     
-    # 🛡️ 【關鍵修復】預先建立進度結束欄位，防止整張表沒有實際開工日造成的崩潰
     p_df['進度結束'] = pd.NaT
 
     task_col = p_df.columns[1] 
