@@ -246,7 +246,7 @@ if not clean_c.empty:
         st.error(f"⚠️ 試車資料庫寫入失敗: {e}")
 
 # ==========================================
-# 7. 圖表生成 (💡 更新為純文字狀態標籤)
+# 7. 圖表生成 (💡 修復 .date() 造成的 TypeError)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -266,11 +266,11 @@ def draw_gantt(df, title, color_col):
     task_col = p_df.columns[1] 
 
     for idx, row in p_df.iterrows():
-        # 🌟 根據需求，將標籤改為純文字
+        # 🌟 移除多餘的 .date()，直接用 Pandas Timestamp 互比！
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
-            if row['實際完成'] < row['預定完成'].date(): 
+            if row['實際完成'] < row['預定完成']: 
                 p_df.loc[idx, task_col] = f"提前完工! {row[task_col]}"
-            elif row['實際完成'] > row['預定完成'].date(): 
+            elif row['實際完成'] > row['預定完成']: 
                 p_df.loc[idx, task_col] = f"delay {row[task_col]}"
 
         if pd.notnull(row['實際開始']):
@@ -323,7 +323,7 @@ with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"🧪 {st.session_state.project_name} - 試車圖", "區域")
 
 # ==========================================
-# 8. 動態備註系統 (💡 修復文字框綁定問題)
+# 8. 動態備註系統
 # ==========================================
 st.divider()
 st.subheader("📝 項目施工日誌 / 備註")
@@ -335,7 +335,6 @@ with c1:
         sel_t = st.selectbox("📝 選擇施工項目：", task_opts, key="sel_note_t")
         if sel_t:
             row = st.session_state.tasks[st.session_state.tasks['施工項目'] == sel_t].iloc[0]
-            # 💡 核心修改：利用 f"txt_t_{sel_t}" 作為動態 key，確保切換項目時畫面重新載入最新備註！
             new_note_t = st.text_area(f"【{sel_t}】備註：", value=row.get('備註', ''), height=150, key=f"txt_t_{sel_t}")
             if st.button("💾 儲存施工備註", key="save_t"):
                 st.session_state.tasks.loc[st.session_state.tasks['施工項目'] == sel_t, '備註'] = new_note_t
@@ -351,7 +350,6 @@ with c2:
         sel_c = st.selectbox("🧪 選擇試車項目：", comm_opts, key="sel_note_c")
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
-            # 💡 核心修改：同樣為試車任務加上動態 key
             new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{sel_c}")
             if st.button("💾 儲存試車備註", key="save_c"):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
