@@ -157,15 +157,25 @@ with st.expander("🧱 施工任務管理", expanded=True):
         "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
     }
 
+    # 💡 核心修復：使用 Pandas Index 對齊，完美支援同名任務！
     act_sync = ed_plan[['施工項目']].copy()
-    act_sync['實際開始'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['實際開始']) if not st.session_state.tasks.empty else None
-    act_sync['實際完成'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['實際完成']) if not st.session_state.tasks.empty else None
-    act_sync['完成度(%)'] = act_sync['施工項目'].map(st.session_state.tasks.set_index('施工項目')['完成度(%)']).fillna(0).astype(int) if not st.session_state.tasks.empty else 0
-
+    if not st.session_state.tasks.empty:
+        act_sync['實際開始'] = st.session_state.tasks['實際開始']
+        act_sync['實際完成'] = st.session_state.tasks['實際完成']
+        act_sync['完成度(%)'] = st.session_state.tasks['完成度(%)']
+    else:
+        act_sync['實際開始'] = None
+        act_sync['實際完成'] = None
+        act_sync['完成度(%)'] = 0
+        
+    act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
     ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, key="ed_act")
 
     new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
-    new_tasks['備註'] = new_tasks['施工項目'].map(st.session_state.tasks.set_index('施工項目')['備註']).fillna("") if '備註' in st.session_state.tasks else ""
+    
+    # 同步備註（利用 index 對齊）
+    new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
+    new_tasks['備註'] = new_tasks['備註'].fillna("")
 
     pre_sync_tasks = new_tasks.copy()
 
@@ -221,15 +231,26 @@ with st.expander("🧪 試車任務管理", expanded=True):
     ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, key="ed_c_plan")
 
     st.subheader("📈 2. 實際進度回報")
+    
+    # 💡 核心修復：使用 Pandas Index 對齊
     c_act_sync = ed_c_plan[['試車項目']].copy()
-    c_act_sync['實際開始'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['實際開始']) if not st.session_state.comm_tasks.empty else None
-    c_act_sync['實際完成'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['實際完成']) if not st.session_state.comm_tasks.empty else None
-    c_act_sync['完成度(%)'] = c_act_sync['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['完成度(%)']).fillna(0).astype(int) if not st.session_state.comm_tasks.empty else 0
-
+    if not st.session_state.comm_tasks.empty:
+        c_act_sync['實際開始'] = st.session_state.comm_tasks['實際開始']
+        c_act_sync['實際完成'] = st.session_state.comm_tasks['實際完成']
+        c_act_sync['完成度(%)'] = st.session_state.comm_tasks['完成度(%)']
+    else:
+        c_act_sync['實際開始'] = None
+        c_act_sync['實際完成'] = None
+        c_act_sync['完成度(%)'] = 0
+        
+    c_act_sync['完成度(%)'] = c_act_sync['完成度(%)'].fillna(0).astype(int)
     ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, key="ed_c_act")
 
     new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
-    new_c_tasks['備註'] = new_c_tasks['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['備註']).fillna("") if '備註' in st.session_state.comm_tasks else ""
+    
+    # 同步備註
+    new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
+    new_c_tasks['備註'] = new_c_tasks['備註'].fillna("")
 
     pre_sync_c_tasks = new_c_tasks.copy()
 
@@ -266,7 +287,7 @@ with st.expander("🧪 試車任務管理", expanded=True):
     if needs_rerun_c: st.rerun()
 
 # ==========================================
-# 7. 圖表生成 (💡 修復：將里程碑圖例獨立顯示於右側說明框)
+# 7. 圖表生成
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -304,11 +325,9 @@ def draw_gantt(df, title, color_col):
     
     if draw_df.empty: return st.warning("⚠️ 至少需有一項非里程碑任務")
         
-    # 第一層：預定計畫
     fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     fig.update_traces(opacity=0.3)
     
-    # 第二層：實際進度
     prog_df = draw_df.dropna(subset=['實際開始', '進度結束'])
     if not prog_df.empty:
         fig2 = px.timeline(prog_df, x_start="實際開始", x_end="進度結束", y=task_col, color=color_col, color_discrete_map=color_map)
@@ -317,20 +336,17 @@ def draw_gantt(df, title, color_col):
             
     fig.update_layout(barmode='overlay') 
     
-    # 💡 核心修正：將里程碑圖例獨立追蹤，讓它們強制顯示在右側說明框
     ms_leg_set = set() 
     
     for _, m in p_df[p_df['是否為里程碑']].iterrows():
-        cat = m[color_col] # 繼承顏色
+        cat = m[color_col]
         region = m['區域']
         is_done = pd.notnull(m['實際完成'])
         
-        # 建立專屬圖例名稱 (包含區域)
-        leg_name = f"{region} (完成)" if is_done else f" {region} "
+        leg_name = f"{region} (完成)" if is_done else f"{region} "
         show_leg = leg_name not in ms_leg_set
         if show_leg: ms_leg_set.add(leg_name)
         
-        # 懸浮提示文字
         vendor_info = f"<br>廠商: {m['施工廠商']}" if '施工廠商' in m else ""
         hover_text = f"<b>里程碑：{m[task_col]}</b><br>區域: {region}{vendor_info}<br>日期: %{{x|%Y-%m-%d}}<extra></extra>"
         
