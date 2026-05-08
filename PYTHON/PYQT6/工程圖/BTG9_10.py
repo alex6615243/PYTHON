@@ -131,7 +131,7 @@ with st.sidebar.expander("📍 區域與廠商管理"):
             else: st.error("⚠️ 該廠商尚有任務")
 
 # ==========================================
-# 5. 施工任務管理 (改為下拉式選單 Layout)
+# 5. 施工任務管理 (下拉選單 Layout)
 # ==========================================
 with st.expander("🧱 施工任務管理", expanded=True):
     for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
@@ -167,19 +167,16 @@ with st.expander("🧱 施工任務管理", expanded=True):
     new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
     new_tasks['備註'] = new_tasks['施工項目'].map(st.session_state.tasks.set_index('施工項目')['備註']).fillna("") if '備註' in st.session_state.tasks else ""
 
-    # 🛡️ 記錄連動前的狀態
     pre_sync_tasks = new_tasks.copy()
 
-    # 💡 核心功能：里程碑自動連動邏輯
+    # 里程碑自動連動邏輯
     m_mask = new_tasks['是否為里程碑'] == True
     new_tasks.loc[m_mask, '預定完成'] = new_tasks.loc[m_mask, '預定開始']
     new_tasks.loc[m_mask, '實際完成'] = new_tasks.loc[m_mask, '實際開始']
 
-    # 自動滿百邏輯 (含里程碑)
     new_tasks.loc[new_tasks['實際完成'].notnull(), '完成度(%)'] = 100
     st.session_state.tasks = new_tasks
 
-    # 判斷是否需要因自動連動而立即刷新畫面
     needs_rerun_t = not new_tasks.equals(pre_sync_tasks)
 
     clean_t = new_tasks.dropna(subset=['施工項目', '預定開始', '預定完成']).copy()
@@ -207,7 +204,7 @@ with st.expander("🧱 施工任務管理", expanded=True):
     if needs_rerun_t: st.rerun()
 
 # ==========================================
-# 6. 試車任務管理 (改為下拉式選單 Layout)
+# 6. 試車任務管理 (下拉選單 Layout)
 # ==========================================
 with st.expander("🧪 試車任務管理", expanded=True):
     for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
@@ -235,10 +232,8 @@ with st.expander("🧪 試車任務管理", expanded=True):
     new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
     new_c_tasks['備註'] = new_c_tasks['試車項目'].map(st.session_state.comm_tasks.set_index('試車項目')['備註']).fillna("") if '備註' in st.session_state.comm_tasks else ""
 
-    # 🛡️ 記錄連動前的狀態
     pre_sync_c_tasks = new_c_tasks.copy()
 
-    # 💡 核心功能：里程碑自動連動邏輯
     mc_mask = new_c_tasks['是否為里程碑'] == True
     new_c_tasks.loc[mc_mask, '預定完成'] = new_c_tasks.loc[mc_mask, '預定開始']
     new_c_tasks.loc[mc_mask, '實際完成'] = new_c_tasks.loc[mc_mask, '實際開始']
@@ -292,10 +287,11 @@ def draw_gantt(df, title, color_col):
     task_col = p_df.columns[1] 
 
     for idx, row in p_df.iterrows():
+        # 🌟 直接使用 Timestamp 比大小，完美解決 TypeError
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
-            if row['實際完成'] < row['預定完成'].date(): 
+            if row['實際完成'] < row['預定完成']: 
                 p_df.loc[idx, task_col] = f"提前完工! {row[task_col]}"
-            elif row['實際完成'] > row['預定完成'].date(): 
+            elif row['實際完成'] > row['預定完成']: 
                 p_df.loc[idx, task_col] = f"delay {row[task_col]}"
 
         if pd.notnull(row['實際開始']):
