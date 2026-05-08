@@ -266,7 +266,7 @@ with st.expander("🧪 試車任務管理", expanded=True):
     if needs_rerun_c: st.rerun()
 
 # ==========================================
-# 7. 圖表生成 (💡 新增 HoverTemplate 強制顯示區域與廠商)
+# 7. 圖表生成 (💡 修復：將里程碑圖例獨立顯示於右側說明框)
 # ==========================================
 st.divider()
 tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
@@ -288,9 +288,9 @@ def draw_gantt(df, title, color_col):
     for idx, row in p_df.iterrows():
         if pd.notnull(row['實際完成']) and pd.notnull(row['預定完成']):
             if row['實際完成'] < row['預定完成']: 
-                p_df.loc[idx, task_col] = f"[提前完工!] {row[task_col]}"
+                p_df.loc[idx, task_col] = f"提前完工! {row[task_col]}"
             elif row['實際完成'] > row['預定完成']: 
-                p_df.loc[idx, task_col] = f"[Delay] {row[task_col]}"
+                p_df.loc[idx, task_col] = f"delay {row[task_col]}"
 
         if pd.notnull(row['實際開始']):
             if pd.notnull(row['實際完成']):
@@ -304,9 +304,11 @@ def draw_gantt(df, title, color_col):
     
     if draw_df.empty: return st.warning("⚠️ 至少需有一項非里程碑任務")
         
+    # 第一層：預定計畫
     fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
     fig.update_traces(opacity=0.3)
     
+    # 第二層：實際進度
     prog_df = draw_df.dropna(subset=['實際開始', '進度結束'])
     if not prog_df.empty:
         fig2 = px.timeline(prog_df, x_start="實際開始", x_end="進度結束", y=task_col, color=color_col, color_discrete_map=color_map)
@@ -315,30 +317,37 @@ def draw_gantt(df, title, color_col):
             
     fig.update_layout(barmode='overlay') 
     
-    leg_set = set(draw_df[color_col].unique())
+    # 💡 核心修正：將里程碑圖例獨立追蹤，讓它們強制顯示在右側說明框
+    ms_leg_set = set() 
+    
     for _, m in p_df[p_df['是否為里程碑']].iterrows():
-        cat = m[color_col]
-        show_leg = cat not in leg_set
-        if show_leg: leg_set.add(cat)
+        cat = m[color_col] # 繼承顏色
+        region = m['區域']
+        is_done = pd.notnull(m['實際完成'])
         
-        # 💡 建立豐富的懸浮提示框 (包含區域、廠商資訊)
+        # 建立專屬圖例名稱 (包含區域)
+        leg_name = f"✅ {region} (完成)" if is_done else f"⭐ {region} (里程碑)"
+        show_leg = leg_name not in ms_leg_set
+        if show_leg: ms_leg_set.add(leg_name)
+        
+        # 懸浮提示文字
         vendor_info = f"<br>廠商: {m['施工廠商']}" if '施工廠商' in m else ""
-        hover_text = f"<b>里程碑：{m[task_col]}</b><br>區域: {m['區域']}{vendor_info}<br>日期: %{{x|%Y-%m-%d}}<extra></extra>"
+        hover_text = f"<b>里程碑：{m[task_col]}</b><br>區域: {region}{vendor_info}<br>日期: %{{x|%Y-%m-%d}}<extra></extra>"
         
-        if pd.notnull(m['實際完成']):
+        if is_done:
             fig.add_trace(go.Scatter(
                 x=[m['實際完成']], y=[m[task_col]], mode='text', 
                 text=[f"✅ {m['實際完成'].strftime('%m/%d')}"], textfont=dict(color='green', size=16, weight='bold'), 
-                name=cat, legendgroup=cat, showlegend=show_leg,
-                hovertemplate=hover_text # 綁定提示框
+                name=leg_name, legendgroup=leg_name, showlegend=show_leg,
+                hovertemplate=hover_text
             ))
         else:
             fig.add_trace(go.Scatter(
                 x=[m['預定開始']], y=[m[task_col]], mode='markers+text', 
                 marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)), 
                 text=[f" {m['預定開始'].strftime('%m/%d')}"], textposition='middle right', textfont=dict(color='black', size=12), 
-                name=cat, legendgroup=cat, showlegend=show_leg,
-                hovertemplate=hover_text # 綁定提示框
+                name=leg_name, legendgroup=leg_name, showlegend=show_leg,
+                hovertemplate=hover_text
             ))
 
     today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
