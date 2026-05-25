@@ -157,7 +157,6 @@ with st.expander("🧱 施工任務管理", expanded=True):
         "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
     }
 
-    # 💡 核心修復：使用 Pandas Index 對齊，完美支援同名任務！
     act_sync = ed_plan[['施工項目']].copy()
     if not st.session_state.tasks.empty:
         act_sync['實際開始'] = st.session_state.tasks['實際開始']
@@ -173,7 +172,6 @@ with st.expander("🧱 施工任務管理", expanded=True):
 
     new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
     
-    # 同步備註（利用 index 對齊）
     new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
     new_tasks['備註'] = new_tasks['備註'].fillna("")
 
@@ -232,7 +230,6 @@ with st.expander("🧪 試車任務管理", expanded=True):
 
     st.subheader("📈 2. 實際進度回報")
     
-    # 💡 核心修復：使用 Pandas Index 對齊
     c_act_sync = ed_c_plan[['試車項目']].copy()
     if not st.session_state.comm_tasks.empty:
         c_act_sync['實際開始'] = st.session_state.comm_tasks['實際開始']
@@ -248,7 +245,6 @@ with st.expander("🧪 試車任務管理", expanded=True):
 
     new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
     
-    # 同步備註
     new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
     new_c_tasks['備註'] = new_c_tasks['備註'].fillna("")
 
@@ -473,3 +469,30 @@ with st.sidebar.expander("💾 檔案管理"):
             if st.button("刪除存檔", type="primary", use_container_width=True, key="btn_del_snap"):
                 supabase.table("tasks_backups").delete().eq("id", opts[sel_b]).execute()
                 st.rerun()
+
+# ==========================================
+# 10. 通知測試
+# ==========================================
+st.divider()
+st.subheader("🔔 LINE 通知測試")
+
+SUPABASE_FUNCTION_URL = "https://evgbktipkzafdickmniz.supabase.co/functions/v1/notify-tasks"
+SUPABASE_ANON_KEY = st.secrets["SUPABASE_KEY"]
+
+if st.button("📲 手動發送 LINE 通知（測試）"):
+    import requests
+    try:
+        res = requests.post(
+            SUPABASE_FUNCTION_URL,
+            headers={
+                "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={"test": True}  # 測試模式
+        )
+        if res.status_code == 200:
+            st.success("✅ 已觸發通知！請查看 LINE")
+        else:
+            st.error(f"❌ 失敗：{res.status_code} - {res.text}")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
