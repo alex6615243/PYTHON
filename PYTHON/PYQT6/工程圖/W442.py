@@ -8,54 +8,12 @@ from supabase import create_client, Client
 import datetime
 
 # ==========================================
-# 0. 頁面基本設定 (⚠️ 必須是整個腳本的第一個 Streamlit 指令)
+# 0. 頁面基本設定 (⚠️ 必須在第一行)
 # ==========================================
 st.set_page_config(layout="wide", page_title="多專案營建與試車管理系統")
 
-# 1. 建立您的工程案清單 (您可以隨時在這裡自由新增、刪除或修改案名)
-PROJECT_LIST = [
-    "W442 新增UT機",
-    "廠房B 擴建工程",
-    "管線C 汰換計畫",
-    "專案D",
-    "專案E"
-]
-
-# 2. 在左側邊欄 (Sidebar) 製作下拉式選單
-st.sidebar.title("🏢 多專案切換管理")
-selected_project = st.sidebar.selectbox("請選擇目前要管理的工程案：", PROJECT_LIST)
-
-# 3. 讓主畫面的大標題，跟著左邊的選擇自動變換
-st.title(f"🛠️ {selected_project} - 專案管理看板")
-st.markdown("---")
-
 # ==========================================
-# 1. 樣式注入
-# ==========================================
-st.markdown("""
-    <style>
-    div:has(#blue-btn) + div button { background-color: #003366 !important; color: white !important; border: none !important; width: 100% !important; font-weight: bold !important; height: 3em !important; }
-    div:has(#blue-btn) + div button:hover { background-color: #004080 !important; color: #FFD700 !important; }
-    div:has(#green-btn) + div button { background-color: #1B5E20 !important; color: white !important; border: none !important; width: 100% !important; font-weight: bold !important; height: 3em !important; }
-    div:has(#green-btn) + div button:hover { background-color: #2E7D32 !important; color: #CCFF90 !important; }
-    .stButton { margin-bottom: 5px; }
-    </style>
-""", unsafe_allow_html=True)
-
-def construction_button(label, key):
-    st.markdown('<div id="blue-btn"></div>', unsafe_allow_html=True)
-    return st.button(label, key=key, use_container_width=True)
-
-def comm_button(label, key):
-    st.markdown('<div id="green-btn"></div>', unsafe_allow_html=True)
-    return st.button(label, key=key, use_container_width=True)
-
-def safe_date(d):
-    if pd.isna(d) or d == "" or d is None: return None
-    return d.isoformat() if hasattr(d, 'isoformat') else str(d)
-
-# ==========================================
-# 2. Supabase 初始化與資料處理
+# 1. Supabase 初始化與資料處理
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -65,8 +23,12 @@ def init_connection():
 
 supabase = init_connection()
 
+# 💡 核心升級：從資料庫動態讀取專案清單
+def load_projects():
+    res = supabase.table("projects").select("name").execute()
+    return [item['name'] for item in res.data] if res.data else ["未命名專案"]
+
 def load_data(table_name="tasks", project_name="W442 新增UT機"):
-    # 💡 核心升級：加上 .eq("project_name", project_name) 確保唯有當前專案的資料被撈出
     res = supabase.table(table_name).select("*").eq("project_name", project_name).execute()
     df = pd.DataFrame(res.data)
     
@@ -95,18 +57,85 @@ def load_list(table_name):
     return [item['name'] for item in res.data] if res.data else ["未設定"]
 
 # ==========================================
-# 3. 初始化設定與多專案即時切換監聽
+# 2. 樣式注入與輔助函數
 # ==========================================
+st.markdown("""
+    <style>
+    div:has(#blue-btn) + div button { background-color: #003366 !important; color: white !important; border: none !important; width: 100% !important; font-weight: bold !important; height: 3em !important; }
+    div:has(#blue-btn) + div button:hover { background-color: #004080 !important; color: #FFD700 !important; }
+    div:has(#green-btn) + div button { background-color: #1B5E20 !important; color: white !important; border: none !important; width: 100% !important; font-weight: bold !important; height: 3em !important; }
+    div:has(#green-btn) + div button:hover { background-color: #2E7D32 !important; color: #CCFF90 !important; }
+    .stButton { margin-bottom: 5px; }
+    </style>
+""", unsafe_allow_html=True)
+
+def construction_button(label, key):
+    st.markdown('<div id="blue-btn"></div>', unsafe_allow_html=True)
+    return st.button(label, key=key, use_container_width=True)
+
+def comm_button(label, key):
+    st.markdown('<div id="green-btn"></div>', unsafe_allow_html=True)
+    return st.button(label, key=key, use_container_width=True)
+
+def safe_date(d):
+    if pd.isna(d) or d == "" or d is None: return None
+    return d.isoformat() if hasattr(d, 'isoformat') else str(d)
+
+# ==========================================
+# 3. 初始化設定與動態專案管理
+# ==========================================
+if 'projects' not in st.session_state: st.session_state.projects = load_projects()
 if 'regions' not in st.session_state: st.session_state.regions = load_list("regions")
 if 'subcontractors' not in st.session_state: st.session_state.subcontractors = load_list("subcontractors")
 
-# 💡 核心升級：監聽下拉選單，只要換專案，就立刻清空並重載對應專案的 tasks
+st.sidebar.title("🏢 多專案切換管理")
+
+# 下拉選單：選擇當前專案
+selected_project = st.sidebar.selectbox("請選擇目前要管理的工程案：", st.session_state.projects)
+
+# 💡 核心升級：新增/刪除專案介面
+with st.sidebar.expander("⚙️ 新增與刪除專案", expanded=False):
+    new_p = st.text_input("✨ 新增專案名稱", placeholder="輸入新工程案名稱...")
+    if st.button("➕ 新增專案", use_container_width=True):
+        if new_p and new_p not in st.session_state.projects:
+            try:
+                supabase.table("projects").insert({"name": new_p}).execute()
+                st.session_state.projects.append(new_p)
+                st.success(f"已新增 {new_p}")
+                st.rerun()
+            except Exception as e: st.error(f"新增失敗: {e}")
+            
+    st.divider()
+    del_p = st.selectbox("🗑️ 選擇要刪除的專案", st.session_state.projects)
+    if st.button("🚨 刪除專案 (含底下所有任務)", type="primary", use_container_width=True):
+        if len(st.session_state.projects) > 1:
+            try:
+                # 1. 刪除該專案底下的所有任務
+                supabase.table("tasks").delete().eq("project_name", del_p).execute()
+                supabase.table("commissioning_tasks").delete().eq("project_name", del_p).execute()
+                # 2. 刪除專案清單上的名字
+                supabase.table("projects").delete().eq("name", del_p).execute()
+                
+                st.session_state.projects.remove(del_p)
+                st.toast(f"已徹底刪除 {del_p}", icon="🗑️")
+                st.rerun()
+            except Exception as e: st.error(f"刪除失敗: {e}")
+        else:
+            st.error("⚠️ 必須保留至少一個專案！")
+
+st.title(f"🛠️ {selected_project} - 專案管理看板")
+st.markdown("---")
+
+# 監聽專案切換，載入對應資料
 if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
     st.session_state.current_project = selected_project
     st.session_state.tasks = load_data("tasks", selected_project)
     st.session_state.comm_tasks = load_data("commissioning_tasks", selected_project)
 
-st.sidebar.header("⚙️ 基礎資料管理")
+# ==========================================
+# 4. 區域與廠商管理 (側邊欄)
+# ==========================================
+st.sidebar.header("基礎資料管理")
 with st.sidebar.expander("📍 區域與廠商管理"):
     t_reg, t_sub = st.tabs(["📍 區域", "👷 廠商"])
     with t_reg:
@@ -205,14 +234,13 @@ with st.expander("🧱 施工任務管理", expanded=True):
                 rmk_str = "" if pd.isna(rmk) else str(rmk)
                 
                 up_t.append({
-                    "project_name": selected_project,  # 💡 核心升級：寫入資料時強制打上當前專案標籤
+                    "project_name": selected_project, 
                     "task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), 
                     "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": str(r['區域']), 
                     "is_milestone": bool(r.get('是否為里程碑', False)), 
                     "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
                     "completion": comp_int, "remarks": rmk_str
                 })
-            # 💡 核心升級：精準只刪除當前專案的資料，不再清空整張資料表
             supabase.table("tasks").delete().eq("project_name", selected_project).execute()
             supabase.table("tasks").insert(up_t).execute()
         except Exception as e:
@@ -280,13 +308,12 @@ with st.expander("🧪 試車任務管理", expanded=True):
                 rmk_str = "" if pd.isna(rmk) else str(rmk)
                 
                 up_c.append({
-                    "project_name": selected_project,  # 💡 核心升級：寫入資料時強制打上當前專案標籤
+                    "project_name": selected_project, 
                     "test_item": str(r['試車項目']), "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), 
                     "region": str(r['區域']), "is_milestone": bool(r.get('是否為里程碑', False)), 
                     "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
                     "completion": comp_int, "remarks": rmk_str
                 })
-            # 💡 核心升級：精準只刪除當前專案的資料，不再清空整張資料表
             supabase.table("commissioning_tasks").delete().eq("project_name", selected_project).execute()
             supabase.table("commissioning_tasks").insert(up_c).execute()
         except Exception as e:
@@ -406,7 +433,6 @@ with c1:
             if st.button("💾 儲存施工備註", key="save_t"):
                 st.session_state.tasks.loc[st.session_state.tasks['施工項目'] == sel_t, '備註'] = new_note_t
                 try:
-                    # 💡 核心升級：精準鎖定當前專案的該施工項目進行備註更新
                     supabase.table("tasks").update({"remarks": new_note_t}).eq("task_name", sel_t).eq("project_name", selected_project).execute()
                     st.success("施工備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
@@ -422,7 +448,6 @@ with c2:
             if st.button("💾 儲存試車備註", key="save_c"):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
-                    # 💡 核心升級：精準鎖定當前專案的該試車項目進行備註更新
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
                     st.success("試車備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
@@ -442,7 +467,6 @@ with st.sidebar.expander("💾 檔案管理"):
         clean_snap_t = st.session_state.tasks.dropna(subset=['施工項目', '預定開始', '預定完成'])
         clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '預定開始', '預定完成'])
         snap = {"tasks": clean_snap_t.to_json(orient='records', date_format='iso'), "comm": clean_snap_c.to_json(orient='records', date_format='iso')}
-        # 💡 核心升級：備份名稱自動掛上當前專案標籤，方便日後識別
         supabase.table("tasks_backups").insert({"backup_name": f"[{selected_project}] {bn if bn else '自動備份'}", "data_json": json.dumps(snap)}).execute()
         st.toast("已建立雲端存檔")
         st.rerun()
@@ -465,7 +489,6 @@ with st.sidebar.expander("💾 檔案管理"):
                         c_int = 0 if pd.isna(c_val) or c_val == "" else int(float(c_val))
                         up_t.append({"project_name": selected_project, "task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
                     
-                    # 💡 安全回復：僅覆蓋此專案的任務數據
                     supabase.table("tasks").delete().eq("project_name", selected_project).execute()
                     if up_t: supabase.table("tasks").insert(up_t).execute()
                     
@@ -476,7 +499,6 @@ with st.sidebar.expander("💾 檔案管理"):
                         c_int = 0 if pd.isna(c_val) or c_val == "" else int(float(c_val))
                         up_c.append({"project_name": selected_project, "test_item": r['試車項目'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
                     
-                    # 💡 安全回復：僅覆蓋此專案的試車數據
                     supabase.table("commissioning_tasks").delete().eq("project_name", selected_project).execute()
                     if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
                     
@@ -507,7 +529,7 @@ if st.button("📲 手動發送 LINE 通知（測試）"):
                 "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
                 "Content-Type": "application/json"
             },
-            json={"test": True}  # 測試模式
+            json={"test": True}
         )
         if res.status_code == 200:
             st.success("✅ 已觸發通知！請查看 LINE")
