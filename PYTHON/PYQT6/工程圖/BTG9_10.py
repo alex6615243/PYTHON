@@ -51,7 +51,6 @@ def load_data(table_name="tasks", project_name="W442 新增UT機"):
         return df[cols]
     return pd.DataFrame(columns=cols)
 
-# 💡 核心升級：讀取清單時，強制加上 project_name 過濾
 def load_list(table_name, project_name):
     res = supabase.table(table_name).select("name").eq("project_name", project_name).execute()
     return [item['name'] for item in res.data] if res.data else []
@@ -107,7 +106,6 @@ with st.sidebar.expander("⚙️ 新增與刪除專案", expanded=False):
             try:
                 supabase.table("tasks").delete().eq("project_name", del_p).execute()
                 supabase.table("commissioning_tasks").delete().eq("project_name", del_p).execute()
-                # 💡 連同專屬的區域和廠商清單一起刪除，保持資料庫乾淨
                 supabase.table("regions").delete().eq("project_name", del_p).execute()
                 supabase.table("subcontractors").delete().eq("project_name", del_p).execute()
                 supabase.table("projects").delete().eq("name", del_p).execute()
@@ -122,7 +120,6 @@ with st.sidebar.expander("⚙️ 新增與刪除專案", expanded=False):
 st.title(f"🛠️ {selected_project} - 專案管理看板")
 st.markdown("---")
 
-# 💡 核心升級：監聽專案切換，連同區域與廠商清單一併重新載入
 if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
     st.session_state.current_project = selected_project
     st.session_state.tasks = load_data("tasks", selected_project)
@@ -140,7 +137,6 @@ with st.sidebar.expander("📍 區域與廠商管理"):
         nr = st.text_input("新增區域名稱", key="nr_in")
         if construction_button("加入區域", key="btn_add_reg"):
             if nr and nr not in st.session_state.regions:
-                # 💡 寫入時，強制打上當前專案標籤
                 supabase.table("regions").insert({"name": nr, "project_name": selected_project}).execute()
                 st.session_state.regions.append(nr)
                 st.rerun()
@@ -149,7 +145,6 @@ with st.sidebar.expander("📍 區域與廠商管理"):
         dr = st.selectbox("選擇刪除區域", dr_options)
         if st.button("🗑️ 刪除區域", type="primary") and dr != "(尚無資料)":
             if not (st.session_state.tasks['區域'] == dr).any() and not (st.session_state.comm_tasks['區域'] == dr).any():
-                # 💡 刪除時，精準比對名稱與專案，防止誤刪別案同名區域
                 supabase.table("regions").delete().eq("name", dr).eq("project_name", selected_project).execute()
                 st.session_state.regions.remove(dr)
                 st.rerun()
@@ -159,7 +154,6 @@ with st.sidebar.expander("📍 區域與廠商管理"):
         ns = st.text_input("新增廠商名稱", key="ns_in")
         if construction_button("加入廠商", key="btn_add_sub"):
             if ns and ns not in st.session_state.subcontractors:
-                # 💡 寫入時，強制打上當前專案標籤
                 supabase.table("subcontractors").insert({"name": ns, "project_name": selected_project}).execute()
                 st.session_state.subcontractors.append(ns)
                 st.rerun()
@@ -168,18 +162,16 @@ with st.sidebar.expander("📍 區域與廠商管理"):
         ds = st.selectbox("選擇刪除廠商", ds_options, key="ds_sel")
         if st.button("🗑️ 刪除廠商", type="primary") and ds != "(尚無資料)":
             if not (st.session_state.tasks['施工廠商'] == ds).any():
-                # 💡 刪除時，精準比對名稱與專案
                 supabase.table("subcontractors").delete().eq("name", ds).eq("project_name", selected_project).execute()
                 st.session_state.subcontractors.remove(ds)
                 st.rerun()
             else: st.error("⚠️ 該廠商尚有任務")
 
-# ⚠️ 確保任務表格的下拉選單至少有一個選項（如果清單是空的，放一個預設值防止報錯）
 safe_regions = st.session_state.regions if st.session_state.regions else ["未設定"]
 safe_subcontractors = st.session_state.subcontractors if st.session_state.subcontractors else ["未設定"]
 
 # ==========================================
-# 5. 施工任務管理 (手動存檔防閃退版)
+# 5. 施工任務管理
 # ==========================================
 with st.expander("🧱 施工任務管理", expanded=True):
     st.info("💡 提示：請在下方表格直接新增或修改資料。編輯完成後，請務必點擊最下方的「💾 儲存並同步至雲端」！")
@@ -197,7 +189,6 @@ with st.expander("🧱 施工任務管理", expanded=True):
         "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
         "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
     }
-    # 移除 key 綁定自動重整，讓編輯器純粹作為 UI
     ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True)
 
     st.subheader("📈 2. 實際進度回報")
@@ -209,8 +200,11 @@ with st.expander("🧱 施工任務管理", expanded=True):
     }
 
     act_sync = ed_plan[['施工項目']].copy()
+    act_sync['實際開始'] = None
+    act_sync['實際完成'] = None
+    act_sync['完成度(%)'] = 0
+
     if not st.session_state.tasks.empty:
-        # 只同步長度相符的資料
         min_len = min(len(act_sync), len(st.session_state.tasks))
         act_sync.loc[act_sync.index[:min_len], '實際開始'] = st.session_state.tasks['實際開始'].values[:min_len]
         act_sync.loc[act_sync.index[:min_len], '實際完成'] = st.session_state.tasks['實際完成'].values[:min_len]
@@ -219,28 +213,22 @@ with st.expander("🧱 施工任務管理", expanded=True):
     act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
     ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True)
 
-    # 💡 核心升級：將存檔動作獨立出來，點擊按鈕才執行資料庫寫入與畫面刷新
     if st.button("💾 儲存施工進度並同步至雲端", type="primary", use_container_width=True, key="btn_save_tasks"):
         with st.spinner("資料同步中..."):
             new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
             new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
             new_tasks['備註'] = new_tasks['備註'].fillna("")
 
-            # 處理里程碑：結束日強制等於起始日
             m_mask = new_tasks['是否為里程碑'] == True
             new_tasks.loc[m_mask, '預定完成'] = new_tasks.loc[m_mask, '預定開始']
             new_tasks.loc[m_mask, '實際完成'] = new_tasks.loc[m_mask, '實際開始']
-
-            # 處理完成度：若有實際完成日，完成度強制 100%
             new_tasks.loc[new_tasks['實際完成'].notnull(), '完成度(%)'] = 100
 
             clean_t = new_tasks.dropna(subset=['施工項目', '預定開始', '預定完成']).copy()
             
             try:
-                # 1. 先清空該專案的舊資料
                 supabase.table("tasks").delete().eq("project_name", selected_project).execute()
                 
-                # 2. 如果有有效資料，則寫入新資料
                 if not clean_t.empty:
                     up_t = []
                     for _, r in clean_t.iterrows():
@@ -259,7 +247,6 @@ with st.expander("🧱 施工任務管理", expanded=True):
                         })
                     supabase.table("tasks").insert(up_t).execute()
                 
-                # 3. 更新暫存並重新整理網頁以繪製最新圖表
                 st.session_state.tasks = clean_t
                 st.success("✅ 施工進度已成功同步！")
                 st.rerun()
@@ -267,7 +254,7 @@ with st.expander("🧱 施工任務管理", expanded=True):
                 st.error(f"⚠️ 資料庫寫入失敗: {e}")
 
 # ==========================================
-# 6. 試車任務管理 (手動存檔防閃退版)
+# 6. 試車任務管理
 # ==========================================
 with st.expander("🧪 試車任務管理", expanded=True):
     st.info("💡 提示：請在下方表格直接新增或修改資料。編輯完成後，請務必點擊最下方的「💾 儲存並同步至雲端」！")
@@ -289,6 +276,10 @@ with st.expander("🧪 試車任務管理", expanded=True):
     st.subheader("📈 2. 實際進度回報")
     
     c_act_sync = ed_c_plan[['試車項目']].copy()
+    c_act_sync['實際開始'] = None
+    c_act_sync['實際完成'] = None
+    c_act_sync['完成度(%)'] = 0
+
     if not st.session_state.comm_tasks.empty:
         min_len_c = min(len(c_act_sync), len(st.session_state.comm_tasks))
         c_act_sync.loc[c_act_sync.index[:min_len_c], '實際開始'] = st.session_state.comm_tasks['實際開始'].values[:min_len_c]
@@ -336,6 +327,8 @@ with st.expander("🧪 試車任務管理", expanded=True):
                 st.rerun()
             except Exception as e:
                 st.error(f"⚠️ 資料庫寫入失敗: {e}")
+
+# ==========================================
 # 7. 圖表生成
 # ==========================================
 st.divider()
