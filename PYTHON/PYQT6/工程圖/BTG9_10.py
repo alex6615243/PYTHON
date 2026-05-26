@@ -85,11 +85,11 @@ def safe_date(d):
 # ==========================================
 if 'projects' not in st.session_state: st.session_state.projects = load_projects()
 
-st.sidebar.title("🏢 多專案切換管理")
-selected_project = st.sidebar.selectbox("請選擇目前要管理的工程案：", st.session_state.projects)
+st.sidebar.title("工程管理")
+selected_project = st.sidebar.selectbox("請選擇工程案：", st.session_state.projects)
 
-with st.sidebar.expander("⚙️ 新增與刪除專案", expanded=False):
-    new_p = st.text_input("✨ 新增專案名稱", placeholder="輸入新工程案名稱...")
+with st.sidebar.expander("新增與刪除專案", expanded=False):
+    new_p = st.text_input("新增專案名稱", placeholder="輸入新工程案名稱...")
     if st.button("➕ 新增專案", use_container_width=True):
         if new_p and new_p not in st.session_state.projects:
             try:
@@ -100,8 +100,8 @@ with st.sidebar.expander("⚙️ 新增與刪除專案", expanded=False):
             except Exception as e: st.error(f"新增失敗: {e}")
             
     st.divider()
-    del_p = st.selectbox("🗑️ 選擇要刪除的專案", st.session_state.projects)
-    if st.button("🚨 刪除專案 (含底下所有任務)", type="primary", use_container_width=True):
+    del_p = st.selectbox("選擇要刪除的專案", st.session_state.projects)
+    if st.button("刪除專案", type="primary", use_container_width=True):
         if len(st.session_state.projects) > 1:
             try:
                 supabase.table("tasks").delete().eq("project_name", del_p).execute()
@@ -117,7 +117,7 @@ with st.sidebar.expander("⚙️ 新增與刪除專案", expanded=False):
         else:
             st.error("⚠️ 必須保留至少一個專案！")
 
-st.title(f"🛠️ {selected_project} - 專案管理看板")
+st.title(f"🛠️ {selected_project} ")
 st.markdown("---")
 
 if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
@@ -131,8 +131,8 @@ if 'current_project' not in st.session_state or st.session_state.current_project
 # 4. 區域與廠商管理 (側邊欄) - 隔離版
 # ==========================================
 st.sidebar.header(f"基礎資料管理 ({selected_project})")
-with st.sidebar.expander("📍 區域與廠商管理"):
-    t_reg, t_sub = st.tabs(["📍 區域", "👷 廠商"])
+with st.sidebar.expander("區域與廠商管理"):
+    t_reg, t_sub = st.tabs(["區域", "廠商"])
     with t_reg:
         nr = st.text_input("新增區域名稱", key="nr_in")
         if construction_button("加入區域", key="btn_add_reg"):
@@ -173,14 +173,13 @@ safe_subcontractors = st.session_state.subcontractors if st.session_state.subcon
 # ==========================================
 # 5. 施工任務管理
 # ==========================================
-with st.expander("🧱 施工任務管理", expanded=True):
-    st.info("💡 提示：請在下方表格直接新增或修改資料。編輯完成後，請務必點擊最下方的「💾 儲存並同步至雲端」！")
+with st.expander("施工任務管理", expanded=True):
     
     for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
         st.session_state.tasks[col] = pd.to_datetime(st.session_state.tasks[col], errors='coerce').dt.date
     st.session_state.tasks['是否為里程碑'] = st.session_state.tasks['是否為里程碑'].fillna(False).astype(bool)
 
-    st.subheader("📋 1. 預定計畫")
+    st.subheader("1. 預定計畫")
     col_cfg_plan = {
         "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
         "施工項目": st.column_config.TextColumn("施工項目", required=True),
@@ -191,7 +190,7 @@ with st.expander("🧱 施工任務管理", expanded=True):
     }
     ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True)
 
-    st.subheader("📈 2. 實際進度回報")
+    st.subheader("2. 實際進度回報")
     col_cfg_act = {
         "施工項目": st.column_config.TextColumn("施工項目", disabled=True),
         "實際開始": st.column_config.DateColumn("實際開工", format="MM/DD"),
@@ -256,14 +255,13 @@ with st.expander("🧱 施工任務管理", expanded=True):
 # ==========================================
 # 6. 試車任務管理
 # ==========================================
-with st.expander("🧪 試車任務管理", expanded=True):
-    st.info("💡 提示：請在下方表格直接新增或修改資料。編輯完成後，請務必點擊最下方的「💾 儲存並同步至雲端」！")
+with st.expander("試車任務管理", expanded=True):
     
     for col in ['預定開始', '預定完成', '實際開始', '實際完成']:
         st.session_state.comm_tasks[col] = pd.to_datetime(st.session_state.comm_tasks[col], errors='coerce').dt.date
     st.session_state.comm_tasks['是否為里程碑'] = st.session_state.comm_tasks['是否為里程碑'].fillna(False).astype(bool)
 
-    st.subheader("📋 1. 預定計畫")
+    st.subheader("1. 預定計畫")
     col_cfg_c_plan = {
         "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
         "試車項目": st.column_config.TextColumn("試車項目", required=True),
@@ -273,7 +271,7 @@ with st.expander("🧪 試車任務管理", expanded=True):
     }
     ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True)
 
-    st.subheader("📈 2. 實際進度回報")
+    st.subheader("2. 實際進度回報")
     
     c_act_sync = ed_c_plan[['試車項目']].copy()
     c_act_sync['實際開始'] = None
@@ -332,7 +330,7 @@ with st.expander("🧪 試車任務管理", expanded=True):
 # 7. 圖表生成
 # ==========================================
 st.divider()
-tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
+tab_g1, tab_g2 = st.tabs(["施工進度圖表", "試車排程圖表"])
 
 def draw_gantt(df, title, color_col):
     p_df = df.dropna(subset=[df.columns[1], '預定開始', '預定完成']).copy()
@@ -420,10 +418,10 @@ def draw_gantt(df, title, color_col):
 
 with tab_g1:
     v_mode = st.radio("分類維度：", ["區域", "施工廠商"], horizontal=True, key="mode_const")
-    draw_gantt(st.session_state.tasks, f"🧱 {selected_project} - 施工圖", v_mode)
+    draw_gantt(st.session_state.tasks, f"{selected_project} - 施工圖", v_mode)
 
 with tab_g2:
-    draw_gantt(st.session_state.comm_tasks, f"🧪 {selected_project} - 試車圖", "區域")
+    draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
 # 8. 動態備註系統
 # ==========================================
 st.divider()
@@ -433,7 +431,7 @@ c1, c2 = st.columns([1, 1])
 with c1:
     task_opts = st.session_state.tasks['施工項目'].dropna().unique().tolist()
     if task_opts:
-        sel_t = st.selectbox("📝 選擇施工項目：", task_opts, key="sel_note_t")
+        sel_t = st.selectbox("選擇施工項目：", task_opts, key="sel_note_t")
         if sel_t:
             row = st.session_state.tasks[st.session_state.tasks['施工項目'] == sel_t].iloc[0]
             new_note_t = st.text_area(f"【{sel_t}】備註：", value=row.get('備註', ''), height=150, key=f"txt_t_{sel_t}")
@@ -448,7 +446,7 @@ with c1:
 with c2:
     comm_opts = st.session_state.comm_tasks['試車項目'].dropna().unique().tolist()
     if comm_opts:
-        sel_c = st.selectbox("🧪 選擇試車項目：", comm_opts, key="sel_note_c")
+        sel_c = st.selectbox("選擇試車項目：", comm_opts, key="sel_note_c")
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
             new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{sel_c}")
@@ -524,7 +522,7 @@ with st.sidebar.expander("💾 檔案管理"):
 st.divider()
 st.subheader("🔔 LINE 通知測試")
 
-if st.button("📲 手動發送 LINE 通知（測試）"):
+if st.button("LINE 通知測試"):
     with st.spinner("LINE 通知發送中..."):
         try:
             # 💡 核心升級：直接使用 Supabase 官方套件呼叫 Function
