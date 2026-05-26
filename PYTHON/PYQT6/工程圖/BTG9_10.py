@@ -524,23 +524,16 @@ with st.sidebar.expander("💾 檔案管理"):
 st.divider()
 st.subheader("🔔 LINE 通知測試")
 
-SUPABASE_FUNCTION_URL = "https://evgbktipkzafdickmniz.supabase.co/functions/v1/notify-tasks"
-SUPABASE_ANON_KEY = st.secrets["SUPABASE_KEY"]
-
 if st.button("📲 手動發送 LINE 通知（測試）"):
-    import requests
-    try:
-        res = requests.post(
-            SUPABASE_FUNCTION_URL,
-            headers={
-                "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={"test": True}
-        )
-        if res.status_code == 200:
+    with st.spinner("LINE 通知發送中..."):
+        try:
+            # 💡 核心升級：直接使用 Supabase 官方套件呼叫 Function
+            # 系統會自動帶入正確的網址與安全憑證，不怕換專案！
+            res = supabase.functions.invoke(
+                "notify-tasks", 
+                invoke_options={"body": {"test": True}}
+            )
             st.success("✅ 已觸發通知！請查看 LINE")
-        else:
-            st.error(f"❌ 失敗：{res.status_code} - {res.text}")
-    except Exception as e:
-        st.error(f"❌ 錯誤：{e}")
+        except Exception as e:
+            st.error(f"❌ 呼叫失敗：{e}")
+            st.info("💡 溫馨提醒：請確認您是否已經在「新的」Supabase 專案中部署了 notify-tasks 程式碼，並且有設定 LINE 的金鑰喔！")
