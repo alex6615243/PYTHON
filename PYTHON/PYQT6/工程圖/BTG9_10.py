@@ -385,7 +385,9 @@ def draw_gantt(df, title, color_col):
         region = m['區域']
         is_done = pd.notnull(m['實際完成'])
         
-        leg_name = f"{region} (完成)" if is_done else f"{region} "
+        # 💡 核心修正：讓右側圖例名稱動態跟隨您選擇的分類維度 (cat)，並加上「里程碑」字樣使其更清晰
+        leg_name = f"{cat} 里程碑 (完成)" if is_done else f"{cat} 里程碑"
+        
         show_leg = leg_name not in ms_leg_set
         if show_leg: ms_leg_set.add(leg_name)
         
@@ -422,8 +424,6 @@ with tab_g1:
 
 with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"🧪 {selected_project} - 試車圖", "區域")
-
-# ==========================================
 # 8. 動態備註系統
 # ==========================================
 st.divider()
