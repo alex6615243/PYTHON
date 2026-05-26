@@ -386,7 +386,7 @@ def draw_gantt(df, title, color_col):
         is_done = pd.notnull(m['實際完成'])
         
         # 💡 核心修正：讓右側圖例名稱動態跟隨您選擇的分類維度 (cat)，並加上「里程碑」字樣使其更清晰
-        leg_name = f"{cat} 里程碑 (完成)" if is_done else f"{cat} 里程碑"
+        leg_name = f"{cat}(完成)" if is_done else f"{cat}"
         
         show_leg = leg_name not in ms_leg_set
         if show_leg: ms_leg_set.add(leg_name)
