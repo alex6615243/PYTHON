@@ -8,6 +8,28 @@ from supabase import create_client, Client
 import datetime
 
 # ==========================================
+# 0. 頁面基本設定 (⚠️ 必須是整個腳本的第一個 Streamlit 指令)
+# ==========================================
+st.set_page_config(layout="wide", page_title="多專案營建與試車管理系統")
+
+# 1. 建立您的工程案清單 (您可以隨時在這裡自由新增、刪除或修改案名)
+PROJECT_LIST = [
+    "W442 新增UT機",
+    "廠房B 擴建工程",
+    "管線C 汰換計畫",
+    "專案D",
+    "專案E"
+]
+
+# 2. 在左側邊欄 (Sidebar) 製作下拉式選單
+st.sidebar.title("🏢 多專案切換管理")
+selected_project = st.sidebar.selectbox("請選擇目前要管理的工程案：", PROJECT_LIST)
+
+# 3. 讓主畫面的大標題，跟著左邊的選擇自動變換
+st.title(f"🛠️ {selected_project} - 專案管理看板")
+st.markdown("---")
+
+# ==========================================
 # 1. 樣式注入
 # ==========================================
 st.markdown("""
@@ -43,8 +65,9 @@ def init_connection():
 
 supabase = init_connection()
 
-def load_data(table_name="tasks"):
-    res = supabase.table(table_name).select("*").execute()
+def load_data(table_name="tasks", project_name="W442 新增UT機"):
+    # 💡 核心升級：加上 .eq("project_name", project_name) 確保唯有當前專案的資料被撈出
+    res = supabase.table(table_name).select("*").eq("project_name", project_name).execute()
     df = pd.DataFrame(res.data)
     
     if table_name == "tasks":
@@ -71,32 +94,17 @@ def load_list(table_name):
     res = supabase.table(table_name).select("name").execute()
     return [item['name'] for item in res.data] if res.data else ["未設定"]
 
-def load_project_name():
-    try:
-        res = supabase.table("project_config").select("project_name").eq("id", 1).execute()
-        return res.data[0]['project_name'] if res.data else "新工程案"
-    except: return "新工程案"
-
 # ==========================================
-# 3. 初始化設定
+# 3. 初始化設定與多專案即時切換監聽
 # ==========================================
-st.set_page_config(layout="wide", page_title="營建與試車管理系統")
-if 'tasks' not in st.session_state: st.session_state.tasks = load_data("tasks")
-if 'comm_tasks' not in st.session_state: st.session_state.comm_tasks = load_data("commissioning_tasks")
 if 'regions' not in st.session_state: st.session_state.regions = load_list("regions")
 if 'subcontractors' not in st.session_state: st.session_state.subcontractors = load_list("subcontractors")
-if 'project_name' not in st.session_state: st.session_state.project_name = load_project_name()
 
-st.title(f"🏢 {st.session_state.project_name}")
-
-new_proj_name = st.text_input("📌 專案名稱設定：", value=st.session_state.project_name)
-if new_proj_name != st.session_state.project_name:
-    try:
-        supabase.table("project_config").upsert({"id": 1, "project_name": new_proj_name}).execute()
-        st.session_state.project_name = new_proj_name
-        st.toast("專案名稱已更新", icon="📝")
-        st.rerun()
-    except Exception as e: st.error(f"專案名稱更新失敗: {e}")
+# 💡 核心升級：監聽下拉選單，只要換專案，就立刻清空並重載對應專案的 tasks
+if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
+    st.session_state.current_project = selected_project
+    st.session_state.tasks = load_data("tasks", selected_project)
+    st.session_state.comm_tasks = load_data("commissioning_tasks", selected_project)
 
 st.sidebar.header("⚙️ 基礎資料管理")
 with st.sidebar.expander("📍 區域與廠商管理"):
@@ -197,13 +205,15 @@ with st.expander("🧱 施工任務管理", expanded=True):
                 rmk_str = "" if pd.isna(rmk) else str(rmk)
                 
                 up_t.append({
+                    "project_name": selected_project,  # 💡 核心升級：寫入資料時強制打上當前專案標籤
                     "task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), 
                     "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": str(r['區域']), 
                     "is_milestone": bool(r.get('是否為里程碑', False)), 
                     "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
                     "completion": comp_int, "remarks": rmk_str
                 })
-            supabase.table("tasks").delete().neq("id", -1).execute()
+            # 💡 核心升級：精準只刪除當前專案的資料，不再清空整張資料表
+            supabase.table("tasks").delete().eq("project_name", selected_project).execute()
             supabase.table("tasks").insert(up_t).execute()
         except Exception as e:
             st.error(f"⚠️ 施工資料庫寫入失敗: {e}")
@@ -270,12 +280,14 @@ with st.expander("🧪 試車任務管理", expanded=True):
                 rmk_str = "" if pd.isna(rmk) else str(rmk)
                 
                 up_c.append({
+                    "project_name": selected_project,  # 💡 核心升級：寫入資料時強制打上當前專案標籤
                     "test_item": str(r['試車項目']), "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), 
                     "region": str(r['區域']), "is_milestone": bool(r.get('是否為里程碑', False)), 
                     "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
                     "completion": comp_int, "remarks": rmk_str
                 })
-            supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
+            # 💡 核心升級：精準只刪除當前專案的資料，不再清空整張資料表
+            supabase.table("commissioning_tasks").delete().eq("project_name", selected_project).execute()
             supabase.table("commissioning_tasks").insert(up_c).execute()
         except Exception as e:
             st.error(f"⚠️ 試車資料庫寫入失敗: {e}")
@@ -372,10 +384,10 @@ def draw_gantt(df, title, color_col):
 
 with tab_g1:
     v_mode = st.radio("分類維度：", ["區域", "施工廠商"], horizontal=True, key="mode_const")
-    draw_gantt(st.session_state.tasks, f"🧱 {st.session_state.project_name} - 施工圖", v_mode)
+    draw_gantt(st.session_state.tasks, f"🧱 {selected_project} - 施工圖", v_mode)
 
 with tab_g2:
-    draw_gantt(st.session_state.comm_tasks, f"🧪 {st.session_state.project_name} - 試車圖", "區域")
+    draw_gantt(st.session_state.comm_tasks, f"🧪 {selected_project} - 試車圖", "區域")
 
 # ==========================================
 # 8. 動態備註系統
@@ -394,7 +406,8 @@ with c1:
             if st.button("💾 儲存施工備註", key="save_t"):
                 st.session_state.tasks.loc[st.session_state.tasks['施工項目'] == sel_t, '備註'] = new_note_t
                 try:
-                    supabase.table("tasks").update({"remarks": new_note_t}).eq("task_name", sel_t).execute()
+                    # 💡 核心升級：精準鎖定當前專案的該施工項目進行備註更新
+                    supabase.table("tasks").update({"remarks": new_note_t}).eq("task_name", sel_t).eq("project_name", selected_project).execute()
                     st.success("施工備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
     else: st.info("尚無施工項目可供填寫備註。")
@@ -409,7 +422,8 @@ with c2:
             if st.button("💾 儲存試車備註", key="save_c"):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
-                    supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).execute()
+                    # 💡 核心升級：精準鎖定當前專案的該試車項目進行備註更新
+                    supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
                     st.success("試車備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
     else: st.info("尚無試車項目可供填寫備註。")
@@ -419,8 +433,8 @@ with c2:
 # ==========================================
 st.sidebar.divider()
 with st.sidebar.expander("💾 檔案管理"):
-    st.download_button("📥 下載施工 CSV", data=st.session_state.tasks.to_csv(index=False).encode('utf-8-sig'), file_name="tasks.csv", use_container_width=True)
-    st.download_button("📥 下載試車 CSV", data=st.session_state.comm_tasks.to_csv(index=False).encode('utf-8-sig'), file_name="comm.csv", use_container_width=True)
+    st.download_button("📥 下載施工 CSV", data=st.session_state.tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_tasks.csv", use_container_width=True)
+    st.download_button("📥 下載試車 CSV", data=st.session_state.comm_tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_comm.csv", use_container_width=True)
     
     st.divider()
     bn = st.text_input("存檔名稱", key="bn_in")
@@ -428,7 +442,8 @@ with st.sidebar.expander("💾 檔案管理"):
         clean_snap_t = st.session_state.tasks.dropna(subset=['施工項目', '預定開始', '預定完成'])
         clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '預定開始', '預定完成'])
         snap = {"tasks": clean_snap_t.to_json(orient='records', date_format='iso'), "comm": clean_snap_c.to_json(orient='records', date_format='iso')}
-        supabase.table("tasks_backups").insert({"backup_name": bn if bn else "自動備份", "data_json": json.dumps(snap)}).execute()
+        # 💡 核心升級：備份名稱自動掛上當前專案標籤，方便日後識別
+        supabase.table("tasks_backups").insert({"backup_name": f"[{selected_project}] {bn if bn else '自動備份'}", "data_json": json.dumps(snap)}).execute()
         st.toast("已建立雲端存檔")
         st.rerun()
 
@@ -448,8 +463,10 @@ with st.sidebar.expander("💾 檔案管理"):
                     for _, r in df_t.iterrows():
                         c_val = r.get('完成度(%)', 0)
                         c_int = 0 if pd.isna(c_val) or c_val == "" else int(float(c_val))
-                        up_t.append({"task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
-                    supabase.table("tasks").delete().neq("id", -1).execute()
+                        up_t.append({"project_name": selected_project, "task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
+                    
+                    # 💡 安全回復：僅覆蓋此專案的任務數據
+                    supabase.table("tasks").delete().eq("project_name", selected_project).execute()
                     if up_t: supabase.table("tasks").insert(up_t).execute()
                     
                     df_c = pd.read_json(io.StringIO(full_data['comm']))
@@ -457,12 +474,14 @@ with st.sidebar.expander("💾 檔案管理"):
                     for _, r in df_c.iterrows():
                         c_val = r.get('完成度(%)', 0)
                         c_int = 0 if pd.isna(c_val) or c_val == "" else int(float(c_val))
-                        up_c.append({"test_item": r['試車項目'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
-                    supabase.table("commissioning_tasks").delete().neq("id", -1).execute()
+                        up_c.append({"project_name": selected_project, "test_item": r['試車項目'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
+                    
+                    # 💡 安全回復：僅覆蓋此專案的試車數據
+                    supabase.table("commissioning_tasks").delete().eq("project_name", selected_project).execute()
                     if up_c: supabase.table("commissioning_tasks").insert(up_c).execute()
                     
-                    st.session_state.tasks = load_data("tasks")
-                    st.session_state.comm_tasks = load_data("commissioning_tasks")
+                    st.session_state.tasks = load_data("tasks", selected_project)
+                    st.session_state.comm_tasks = load_data("commissioning_tasks", selected_project)
                     st.rerun()
                 except Exception as e: st.error(f"回復失敗: {e}")
         with c2:
