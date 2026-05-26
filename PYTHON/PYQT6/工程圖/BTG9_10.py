@@ -212,7 +212,11 @@ with st.expander("施工任務管理", expanded=True):
     act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
     ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True)
 
-    if st.button("💾 儲存施工進度並同步至雲端", type="primary", use_container_width=True, key="btn_save_tasks"):
+    col1, col2 = st.columns([5, 1])
+    with col2:
+        btn_save_t = st.button("💾 儲存並同步", type="primary", use_container_width=True, key="btn_save_tasks")
+        
+    if btn_save_t:
         with st.spinner("資料同步中..."):
             new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
             new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
@@ -287,7 +291,11 @@ with st.expander("試車任務管理", expanded=True):
     c_act_sync['完成度(%)'] = c_act_sync['完成度(%)'].fillna(0).astype(int)
     ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True)
 
-    if st.button("💾 儲存試車進度並同步至雲端", type="primary", use_container_width=True, key="btn_save_comm"):
+    col1, col2 = st.columns([5, 1])
+    with col2:
+        btn_save_c = st.button("💾 儲存並同步", type="primary", use_container_width=True, key="btn_save_comm")
+
+    if btn_save_c:
         with st.spinner("資料同步中..."):
             new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
             new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
