@@ -425,7 +425,7 @@ with tab_g2:
 # 8. 動態備註系統
 # ==========================================
 st.divider()
-st.subheader("📝 項目施工日誌 / 備註")
+st.subheader("施工日誌 / 備註")
 c1, c2 = st.columns([1, 1])
 
 with c1:
@@ -520,7 +520,7 @@ with st.sidebar.expander("💾 檔案管理"):
 # 10. 通知測試
 # ==========================================
 st.divider()
-st.subheader("🔔 LINE 通知測試")
+st.subheader("LINE 通知測試")
 
 if st.button("LINE 通知測試"):
     with st.spinner("LINE 通知發送中..."):
