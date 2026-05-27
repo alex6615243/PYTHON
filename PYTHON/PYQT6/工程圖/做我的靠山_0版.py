@@ -60,25 +60,49 @@ def load_list(table_name, project_name):
 # ==========================================
 st.markdown("""
     <style>
-    div:has(#blue-btn) + div button { background-color: #003366 !important; color: white !important; border: none !important; width: 100% !important; font-weight: bold !important; height: 3em !important; }
-    div:has(#blue-btn) + div button:hover { background-color: #004080 !important; color: #FFD700 !important; }
-    div:has(#green-btn) + div button { background-color: #1B5E20 !important; color: white !important; border: none !important; width: 100% !important; font-weight: bold !important; height: 3em !important; }
-    div:has(#green-btn) + div button:hover { background-color: #2E7D32 !important; color: #CCFF90 !important; }
-    .stButton { margin-bottom: 5px; }
+    /* 1. 隱藏我們偷偷插入的定位標籤，不留痕跡 */
+    div[data-testid="element-container"]:has(#blue-btn),
+    div[data-testid="element-container"]:has(#green-btn) {
+        display: none !important;
+    }
+
+    /* 2. 藍色按鈕精準變色與尺寸鎖定 */
+    div[data-testid="element-container"]:has(#blue-btn) + div[data-testid="element-container"] button {
+        background-color: #003366 !important;
+        color: white !important;
+        border: none !important;
+        font-weight: bold !important;
+        width: 100% !important; /* 強制滿版寬度 */
+        height: 3em !important;
+    }
+    div[data-testid="element-container"]:has(#blue-btn) + div[data-testid="element-container"] button:hover {
+        background-color: #004080 !important;
+        color: #FFD700 !important;
+    }
+
+    /* 3. 綠色按鈕精準變色與尺寸鎖定 */
+    div[data-testid="element-container"]:has(#green-btn) + div[data-testid="element-container"] button {
+        background-color: #1B5E20 !important;
+        color: white !important;
+        border: none !important;
+        font-weight: bold !important;
+        width: 100% !important; /* 強制滿版寬度 */
+        height: 3em !important;
+    }
+    div[data-testid="element-container"]:has(#green-btn) + div[data-testid="element-container"] button:hover {
+        background-color: #2E7D32 !important;
+        color: #CCFF90 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 def construction_button(label, key):
-    st.markdown('<div id="blue-btn"></div>', unsafe_allow_html=True)
+    st.markdown('<span id="blue-btn"></span>', unsafe_allow_html=True)
     return st.button(label, key=key, use_container_width=True)
 
 def comm_button(label, key):
-    st.markdown('<div id="green-btn"></div>', unsafe_allow_html=True)
+    st.markdown('<span id="green-btn"></span>', unsafe_allow_html=True)
     return st.button(label, key=key, use_container_width=True)
-
-def safe_date(d):
-    if pd.isna(d) or d == "" or d is None: return None
-    return d.isoformat() if hasattr(d, 'isoformat') else str(d)
 
 # ==========================================
 # 3. 專案切換與動態資料載入
