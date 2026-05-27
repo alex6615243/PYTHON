@@ -56,54 +56,17 @@ def load_list(table_name, project_name):
     return [item['name'] for item in res.data] if res.data else []
 
 # ==========================================
-# 2. 樣式注入與輔助函數
+# 2. 樣式注入與輔助函數 (純淨版)
 # ==========================================
-st.markdown("""
-    <style>
-    /* 1. 隱藏我們偷偷插入的定位標籤，不留痕跡 */
-    div[data-testid="element-container"]:has(#blue-btn),
-    div[data-testid="element-container"]:has(#green-btn) {
-        display: none !important;
-    }
-
-    /* 2. 藍色按鈕精準變色與尺寸鎖定 */
-    div[data-testid="element-container"]:has(#blue-btn) + div[data-testid="element-container"] button {
-        background-color: #003366 !important;
-        color: white !important;
-        border: none !important;
-        font-weight: bold !important;
-        width: 100% !important; /* 強制滿版寬度 */
-        height: 3em !important;
-    }
-    div[data-testid="element-container"]:has(#blue-btn) + div[data-testid="element-container"] button:hover {
-        background-color: #004080 !important;
-        color: #FFD700 !important;
-    }
-
-    /* 3. 綠色按鈕精準變色與尺寸鎖定 */
-    div[data-testid="element-container"]:has(#green-btn) + div[data-testid="element-container"] button {
-        background-color: #1B5E20 !important;
-        color: white !important;
-        border: none !important;
-        font-weight: bold !important;
-        width: 100% !important; /* 強制滿版寬度 */
-        height: 3em !important;
-    }
-    div[data-testid="element-container"]:has(#green-btn) + div[data-testid="element-container"] button:hover {
-        background-color: #2E7D32 !important;
-        color: #CCFF90 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 def construction_button(label, key):
-    st.markdown('<span id="blue-btn"></span>', unsafe_allow_html=True)
     return st.button(label, key=key, use_container_width=True)
 
 def comm_button(label, key):
-    st.markdown('<span id="green-btn"></span>', unsafe_allow_html=True)
     return st.button(label, key=key, use_container_width=True)
 
+def safe_date(d):
+    if pd.isna(d) or d == "" or d is None: return None
+    return d.isoformat() if hasattr(d, 'isoformat') else str(d)
 # ==========================================
 # 3. 專案切換與動態資料載入
 # ==========================================
@@ -552,13 +515,11 @@ with st.sidebar.expander("💾 檔案管理"):
 # 10. 通知測試
 # ==========================================
 st.divider()
-st.subheader("LINE 通知測試")
+st.subheader("🔔 LINE 通知測試")
 
-if comm_button("LINE 通知測試", key="btn_test_line"):
+if st.button("📲 手動發送 LINE 通知（測試）", use_container_width=True, key="btn_test_line"):
     with st.spinner("LINE 通知發送中..."):
         try:
-            # 💡 核心升級：直接使用 Supabase 官方套件呼叫 Function
-            # 系統會自動帶入正確的網址與安全憑證，不怕換專案！
             res = supabase.functions.invoke(
                 "notify-tasks", 
                 invoke_options={"body": {"test": True}}
@@ -566,4 +527,42 @@ if comm_button("LINE 通知測試", key="btn_test_line"):
             st.success("✅ 已觸發通知！請查看 LINE")
         except Exception as e:
             st.error(f"❌ 呼叫失敗：{e}")
-            st.info("💡 溫馨提醒：請確認您是否已經在「新的」Supabase 專案中部署了 notify-tasks 程式碼，並且有設定 LINE 的金鑰喔！")
+# ==========================================
+# 11. 魔法變色系統 (JavaScript 強制渲染)
+# ==========================================
+import streamlit.components.v1 as components
+
+components.html(
+    """
+    <script>
+    const doc = window.parent.document;
+    const styleButtons = () => {
+        const buttons = doc.querySelectorAll('.stButton button');
+        buttons.forEach(btn => {
+            const text = btn.innerText;
+            
+            // 🔹 只要按鈕文字包含這些字，全部強制變藍色
+            if (text.includes('儲存施工') || text.includes('加入區域') || text.includes('加入廠商') || text.includes('立即存檔')) {
+                btn.style.backgroundColor = '#003366';
+                btn.style.color = '#FFFFFF';
+                btn.style.border = 'none';
+            } 
+            // 🔸 只要按鈕文字包含這些字，全部強制變綠色
+            else if (text.includes('LINE') || text.includes('儲存試車')) {
+                btn.style.backgroundColor = '#1B5E20';
+                btn.style.color = '#FFFFFF';
+                btn.style.border = 'none';
+            }
+        });
+    };
+    
+    // 立即執行一次
+    styleButtons();
+    // 建立監視器，只要您點擊網頁任何地方，確保按鈕顏色不會掉下來
+    const observer = new MutationObserver(styleButtons);
+    observer.observe(doc.body, { childList: true, subtree: true });
+    </script>
+    """,
+    height=0,
+    width=0,
+)
