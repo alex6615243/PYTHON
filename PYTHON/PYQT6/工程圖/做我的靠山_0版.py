@@ -515,9 +515,9 @@ with st.sidebar.expander("💾 檔案管理"):
 # 10. 通知測試
 # ==========================================
 st.divider()
-st.subheader("🔔 LINE 通知測試")
+st.subheader("LINE 通知測試")
 
-if st.button("📲 手動發送 LINE 通知（測試）", use_container_width=True, key="btn_test_line"):
+if st.button("手動發送 LINE 通知（測試）", key="btn_test_line"):
     with st.spinner("LINE 通知發送中..."):
         try:
             res = supabase.functions.invoke(
