@@ -147,7 +147,7 @@ with st.sidebar.expander("區域與廠商管理"):
                 
         ds_options = st.session_state.subcontractors if st.session_state.subcontractors else ["(尚無資料)"]
         ds = st.selectbox("選擇刪除廠商", ds_options, key="ds_sel")
-        if st.button("🗑️ 刪除廠商", type="primary") and ds != "(尚無資料)":
+        if st.button("刪除廠商", type="primary") and ds != "(尚無資料)":
             if not (st.session_state.tasks['施工廠商'] == ds).any():
                 supabase.table("subcontractors").delete().eq("name", ds).eq("project_name", selected_project).execute()
                 st.session_state.subcontractors.remove(ds)
