@@ -77,7 +77,7 @@ selected_project = st.sidebar.selectbox("請選擇工程案：", st.session_stat
 
 with st.sidebar.expander("新增與刪除專案", expanded=False):
     new_p = st.text_input("新增專案名稱", placeholder="輸入新工程案名稱...")
-    if st.button("➕ 新增專案", use_container_width=True):
+    if st.button("新增專案", use_container_width=True):
         if new_p and new_p not in st.session_state.projects:
             try:
                 supabase.table("projects").insert({"name": new_p}).execute()
@@ -98,7 +98,7 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
                 supabase.table("projects").delete().eq("name", del_p).execute()
                 
                 st.session_state.projects.remove(del_p)
-                st.toast(f"已徹底刪除 {del_p}", icon="🗑️")
+                st.toast(f"已徹底刪除 {del_p}")
                 st.rerun()
             except Exception as e: st.error(f"刪除失敗: {e}")
         else:
@@ -130,7 +130,7 @@ with st.sidebar.expander("區域與廠商管理"):
         
         dr_options = st.session_state.regions if st.session_state.regions else ["(尚無資料)"]
         dr = st.selectbox("選擇刪除區域", dr_options)
-        if st.button("🗑️ 刪除區域", type="primary") and dr != "(尚無資料)":
+        if st.button("刪除區域", type="primary") and dr != "(尚無資料)":
             if not (st.session_state.tasks['區域'] == dr).any() and not (st.session_state.comm_tasks['區域'] == dr).any():
                 supabase.table("regions").delete().eq("name", dr).eq("project_name", selected_project).execute()
                 st.session_state.regions.remove(dr)
