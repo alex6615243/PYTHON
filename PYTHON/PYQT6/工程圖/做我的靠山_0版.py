@@ -102,7 +102,7 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
                 st.rerun()
             except Exception as e: st.error(f"刪除失敗: {e}")
         else:
-            st.error("⚠️ 必須保留至少一個專案！")
+            st.error("必須保留至少一個專案！")
 
 st.title(f"🛠️ {selected_project} ")
 st.markdown("---")
@@ -201,7 +201,7 @@ with st.expander("施工任務管理", expanded=True):
 
     col1, col2 = st.columns([5, 1])
     with col2:
-        btn_save_t = st.button("💾 儲存並同步", type="primary", use_container_width=True, key="btn_save_tasks")
+        btn_save_t = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_tasks")
         
     if btn_save_t:
         with st.spinner("資料同步中..."):
@@ -280,7 +280,7 @@ with st.expander("試車任務管理", expanded=True):
 
     col1, col2 = st.columns([5, 1])
     with col2:
-        btn_save_c = st.button("💾 儲存並同步", type="primary", use_container_width=True, key="btn_save_comm")
+        btn_save_c = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_comm")
 
     if btn_save_c:
         with st.spinner("資料同步中..."):
@@ -430,7 +430,7 @@ with c1:
         if sel_t:
             row = st.session_state.tasks[st.session_state.tasks['施工項目'] == sel_t].iloc[0]
             new_note_t = st.text_area(f"【{sel_t}】備註：", value=row.get('備註', ''), height=150, key=f"txt_t_{sel_t}")
-            if st.button("💾 儲存施工備註", key="save_t"):
+            if st.button("儲存施工備註", key="save_t"):
                 st.session_state.tasks.loc[st.session_state.tasks['施工項目'] == sel_t, '備註'] = new_note_t
                 try:
                     supabase.table("tasks").update({"remarks": new_note_t}).eq("task_name", sel_t).eq("project_name", selected_project).execute()
@@ -445,7 +445,7 @@ with c2:
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
             new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{sel_c}")
-            if st.button("💾 儲存試車備註", key="save_c"):
+            if st.button("儲存試車備註", key="save_c"):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
@@ -457,13 +457,13 @@ with c2:
 # 9. 檔案備份與管理
 # ==========================================
 st.sidebar.divider()
-with st.sidebar.expander("💾 檔案管理"):
-    st.download_button("📥 下載施工 CSV", data=st.session_state.tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_tasks.csv", use_container_width=True)
-    st.download_button("📥 下載試車 CSV", data=st.session_state.comm_tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_comm.csv", use_container_width=True)
+with st.sidebar.expander("檔案管理"):
+    st.download_button("下載施工 CSV", data=st.session_state.tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_tasks.csv", use_container_width=True)
+    st.download_button("下載試車 CSV", data=st.session_state.comm_tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_comm.csv", use_container_width=True)
     
     st.divider()
     bn = st.text_input("存檔名稱", key="bn_in")
-    if construction_button("💾 立即存檔", key="btn_save_snap"):
+    if construction_button("立即存檔", key="btn_save_snap"):
         clean_snap_t = st.session_state.tasks.dropna(subset=['施工項目', '預定開始', '預定完成'])
         clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '預定開始', '預定完成'])
         snap = {"tasks": clean_snap_t.to_json(orient='records', date_format='iso'), "comm": clean_snap_c.to_json(orient='records', date_format='iso')}
@@ -517,7 +517,7 @@ with st.sidebar.expander("💾 檔案管理"):
 st.divider()
 st.subheader("LINE 通知測試")
 
-if st.button("手動發送 LINE 通知（測試）", key="btn_test_line"):
+if st.button("測試", key="btn_test_line"):
     with st.spinner("LINE 通知發送中..."):
         try:
             res = supabase.functions.invoke(
