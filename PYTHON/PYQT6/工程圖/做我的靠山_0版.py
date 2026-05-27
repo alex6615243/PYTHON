@@ -530,7 +530,7 @@ with st.sidebar.expander("💾 檔案管理"):
 st.divider()
 st.subheader("LINE 通知測試")
 
-if st.button("LINE 通知測試"):
+if comm_button("LINE 通知測試", key="btn_test_line"):
     with st.spinner("LINE 通知發送中..."):
         try:
             # 💡 核心升級：直接使用 Supabase 官方套件呼叫 Function
