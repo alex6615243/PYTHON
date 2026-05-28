@@ -418,6 +418,7 @@ with tab_g1:
 with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
 # ==========================================
+# ==========================================
 # 8. 動態備註與每日日誌系統
 # ==========================================
 st.divider()
@@ -426,8 +427,8 @@ c1, c2 = st.columns([1, 1])
 
 with c1:
     st.markdown("##### 每日施工日誌")
-    # 預設顯示今天的日期，可自由點擊日曆切換
-    log_date = st.date_input("選擇日期：", datetime.date.today(), key="log_date_t")
+    # 💡 核心修正：將專案名稱加入 key，確保切換專案時日期選擇器互相獨立！
+    log_date = st.date_input("選擇日期：", datetime.date.today(), key=f"log_date_{selected_project}")
     
     # 從資料庫讀取所選日期的舊日誌
     existing_log = ""
@@ -438,9 +439,11 @@ with c1:
     except Exception:
         pass
         
-    new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{log_date}")
+    # 💡 核心修正：文字輸入框也綁定專案名稱
+    new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{selected_project}_{log_date}")
     
-    if st.button("儲存施工日誌", key="save_t", use_container_width=True):
+    # 💡 核心修正：按鈕的 key 也綁定專案名稱
+    if st.button("儲存施工日誌", key=f"save_t_{selected_project}", use_container_width=True):
         try:
             # 刪除舊紀錄並寫入新紀錄 (等同於覆蓋更新)
             supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
@@ -454,11 +457,13 @@ with c2:
     st.markdown("##### 試車項目備註")
     comm_opts = st.session_state.comm_tasks['試車項目'].dropna().unique().tolist()
     if comm_opts:
-        sel_c = st.selectbox("選擇試車項目：", comm_opts, key="sel_note_c")
+        # 💡 核心修正：所有試車元件的 key 也綁定專案名稱，達到完全隔離
+        sel_c = st.selectbox("選擇試車項目：", comm_opts, key=f"sel_note_c_{selected_project}")
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
-            new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{sel_c}")
-            if st.button("儲存試車備註", key="save_c", use_container_width=True):
+            new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{selected_project}_{sel_c}")
+            
+            if st.button("儲存試車備註", key=f"save_c_{selected_project}", use_container_width=True):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
