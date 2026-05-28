@@ -417,42 +417,54 @@ with tab_g1:
 
 with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
-# 8. 動態備註系統
+# ==========================================
+# 8. 動態備註與每日日誌系統
 # ==========================================
 st.divider()
-st.subheader("施工日誌 / 備註")
+st.subheader("施工日誌與專案備註")
 c1, c2 = st.columns([1, 1])
 
 with c1:
-    task_opts = st.session_state.tasks['施工項目'].dropna().unique().tolist()
-    if task_opts:
-        sel_t = st.selectbox("選擇施工項目：", task_opts, key="sel_note_t")
-        if sel_t:
-            row = st.session_state.tasks[st.session_state.tasks['施工項目'] == sel_t].iloc[0]
-            new_note_t = st.text_area(f"【{sel_t}】備註：", value=row.get('備註', ''), height=150, key=f"txt_t_{sel_t}")
-            if st.button("儲存施工備註", key="save_t"):
-                st.session_state.tasks.loc[st.session_state.tasks['施工項目'] == sel_t, '備註'] = new_note_t
-                try:
-                    supabase.table("tasks").update({"remarks": new_note_t}).eq("task_name", sel_t).eq("project_name", selected_project).execute()
-                    st.success("施工備註已同步至雲端！")
-                except Exception as e: st.error(f"備註寫入失敗: {e}")
-    else: st.info("尚無施工項目可供填寫備註。")
+    st.markdown("##### 每日施工日誌")
+    # 預設顯示今天的日期，可自由點擊日曆切換
+    log_date = st.date_input("選擇日期：", datetime.date.today(), key="log_date_t")
+    
+    # 從資料庫讀取所選日期的舊日誌
+    existing_log = ""
+    try:
+        res_log = supabase.table("daily_logs").select("content").eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
+        if res_log.data:
+            existing_log = res_log.data[0]['content']
+    except Exception:
+        pass
+        
+    new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{log_date}")
+    
+    if st.button("儲存施工日誌", key="save_t", use_container_width=True):
+        try:
+            # 刪除舊紀錄並寫入新紀錄 (等同於覆蓋更新)
+            supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
+            if new_log.strip():
+                supabase.table("daily_logs").insert({"project_name": selected_project, "log_date": str(log_date), "content": new_log}).execute()
+            st.success(f"✅ {log_date} 日誌已同步至雲端！")
+        except Exception as e:
+            st.error(f"寫入失敗: {e}")
 
 with c2:
+    st.markdown("##### 試車項目備註")
     comm_opts = st.session_state.comm_tasks['試車項目'].dropna().unique().tolist()
     if comm_opts:
         sel_c = st.selectbox("選擇試車項目：", comm_opts, key="sel_note_c")
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
             new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{sel_c}")
-            if st.button("儲存試車備註", key="save_c"):
+            if st.button("儲存試車備註", key="save_c", use_container_width=True):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
-                    st.success("試車備註已同步至雲端！")
+                    st.success("✅ 試車備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
     else: st.info("尚無試車項目可供填寫備註。")
-
 # ==========================================
 # 9. 檔案備份與管理
 # ==========================================
