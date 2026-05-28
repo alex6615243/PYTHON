@@ -435,7 +435,7 @@ with c1:
             logged_dates = sorted(list(set([pd.to_datetime(d['log_date']).strftime('%m/%d') for d in res_logged.data])))
             if logged_dates:
                 tags = " ".join([f"`{d}`" for d in logged_dates])
-                st.markdown(f"💡 **已紀錄的日期：** {tags}")
+                st.markdown(f"**出工日期：** {tags}")
     except Exception:
         pass
 
@@ -454,7 +454,7 @@ with c1:
                 active_tasks.append(str(r['施工項目']))
 
     if active_tasks:
-        st.info(f"🚧 **本日關聯項目：** {', '.join(active_tasks)}")
+        st.info(f"**本日施工項目：** {', '.join(active_tasks)}")
 
     # 從資料庫讀取所選日期的舊日誌
     existing_log = ""
