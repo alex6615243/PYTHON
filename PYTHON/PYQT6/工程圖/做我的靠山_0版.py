@@ -418,7 +418,6 @@ with tab_g1:
 with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
 # ==========================================
-# ==========================================
 # 8. 動態備註與每日日誌系統
 # ==========================================
 st.divider()
@@ -427,9 +426,36 @@ c1, c2 = st.columns([1, 1])
 
 with c1:
     st.markdown("##### 每日施工日誌")
-    # 💡 核心修正：將專案名稱加入 key，確保切換專案時日期選擇器互相獨立！
     log_date = st.date_input("選擇日期：", datetime.date.today(), key=f"log_date_{selected_project}")
     
+    # 💡 升級功能 1：抓取已填寫過日誌的日期，變成視覺化標籤
+    try:
+        res_logged = supabase.table("daily_logs").select("log_date").eq("project_name", selected_project).order("log_date").execute()
+        if res_logged.data:
+            logged_dates = sorted(list(set([pd.to_datetime(d['log_date']).strftime('%m/%d') for d in res_logged.data])))
+            if logged_dates:
+                tags = " ".join([f"`{d}`" for d in logged_dates])
+                st.markdown(f"💡 **已紀錄的日期：** {tags}")
+    except Exception:
+        pass
+
+    # 💡 升級功能 2：自動比對「施工任務表」，抓出該日期正在進行的項目
+    active_tasks = []
+    if not st.session_state.tasks.empty:
+        for _, r in st.session_state.tasks.iterrows():
+            # 優先看實際進度，若無則看預定進度
+            start = r['實際開始'] if pd.notnull(r['實際開始']) else r['預定開始']
+            end = r['實際完成'] if pd.notnull(r['實際完成']) else r['預定完成']
+            
+            if pd.notnull(start) and pd.notnull(end):
+                if start <= log_date <= end:
+                    active_tasks.append(str(r['施工項目']))
+            elif pd.notnull(start) and start == log_date: # 只有單一天的情況
+                active_tasks.append(str(r['施工項目']))
+
+    if active_tasks:
+        st.info(f"🚧 **本日關聯項目：** {', '.join(active_tasks)}")
+
     # 從資料庫讀取所選日期的舊日誌
     existing_log = ""
     try:
@@ -439,17 +465,15 @@ with c1:
     except Exception:
         pass
         
-    # 💡 核心修正：文字輸入框也綁定專案名稱
     new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{selected_project}_{log_date}")
     
-    # 💡 核心修正：按鈕的 key 也綁定專案名稱
     if st.button("儲存施工日誌", key=f"save_t_{selected_project}", use_container_width=True):
         try:
-            # 刪除舊紀錄並寫入新紀錄 (等同於覆蓋更新)
             supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
             if new_log.strip():
                 supabase.table("daily_logs").insert({"project_name": selected_project, "log_date": str(log_date), "content": new_log}).execute()
             st.success(f"✅ {log_date} 日誌已同步至雲端！")
+            st.rerun() # 儲存後立刻重整，讓上面的「已紀錄日期標籤」馬上更新
         except Exception as e:
             st.error(f"寫入失敗: {e}")
 
@@ -457,7 +481,6 @@ with c2:
     st.markdown("##### 試車項目備註")
     comm_opts = st.session_state.comm_tasks['試車項目'].dropna().unique().tolist()
     if comm_opts:
-        # 💡 核心修正：所有試車元件的 key 也綁定專案名稱，達到完全隔離
         sel_c = st.selectbox("選擇試車項目：", comm_opts, key=f"sel_note_c_{selected_project}")
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
@@ -470,7 +493,6 @@ with c2:
                     st.success("✅ 試車備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
     else: st.info("尚無試車項目可供填寫備註。")
-# ==========================================
 # 9. 檔案備份與管理
 # ==========================================
 st.sidebar.divider()
