@@ -337,13 +337,11 @@ def draw_gantt(df, title, color_col):
     p_df['實際完成'] = pd.to_datetime(p_df['實際完成'], errors='coerce')
     p_df = p_df.sort_values("預定開始")
     
-    # 💡 核心修正 1：將所有完成日期推延到該日的 23:59:59，賦予同日完工的任務實體寬度
-    p_df['預定完成'] = p_df['預定完成'] + pd.Timedelta(hours=23, minutes=59, seconds=59)
-    mask_act = p_df['實際完成'].notnull()
-    p_df.loc[mask_act, '實際完成'] = p_df.loc[mask_act, '實際完成'] + pd.Timedelta(hours=23, minutes=59, seconds=59)
-
-    p_df['進度結束'] = pd.NaT
-
+    # 💡 核心修正 1：將繪圖用的「結束邊界」獨立出來，不要污染原本的日期資料！
+    # 在甘特圖中，要涵蓋一整天，繪圖的結束點必須是「隔天的 00:00」
+    p_df['預定完成_繪圖'] = p_df['預定完成'] + pd.Timedelta(days=1)
+    
+    p_df['進度結束_繪圖'] = pd.NaT
     task_col = p_df.columns[1] 
 
     for idx, row in p_df.iterrows():
@@ -355,23 +353,36 @@ def draw_gantt(df, title, color_col):
 
         if pd.notnull(row['實際開始']):
             if pd.notnull(row['實際完成']):
-                p_df.loc[idx, '進度結束'] = row['實際完成']
+                # 已經完工，進度條直接畫到實際完工日的隔天 00:00
+                p_df.loc[idx, '進度結束_繪圖'] = row['實際完成'] + pd.Timedelta(days=1)
             else:
-                planned_dur = row['預定完成'] - row['預定開始']
-                p_df.loc[idx, '進度結束'] = row['實際開始'] + planned_dur * (row['完成度(%)'] / 100.0)
+                # 尚未完工，根據完成度計算比例。總天數須包含頭尾 (+1)
+                planned_days = (row['預定完成'] - row['預定開始']).days + 1
+                p_df.loc[idx, '進度結束_繪圖'] = row['實際開始'] + pd.Timedelta(days=planned_days * (row['完成度(%)'] / 100.0))
     
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
-    draw_df = p_df[~p_df['是否為里程碑']]
+    draw_df = p_df[~p_df['是否為里程碑']].copy()
     
     if draw_df.empty: return st.warning("⚠️ 至少需有一項非里程碑任務")
         
-    fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30)
-    fig.update_traces(opacity=0.3)
+    # 💡 核心修正 2：準備乾淨的「純文字」給 Tooltip (游標懸浮提示) 使用
+    draw_df['預定開始_str'] = draw_df['預定開始'].dt.strftime('%Y-%m-%d')
+    draw_df['預定完成_str'] = draw_df['預定完成'].dt.strftime('%Y-%m-%d')
     
-    prog_df = draw_df.dropna(subset=['實際開始', '進度結束'])
+    fig = px.timeline(draw_df, x_start="預定開始", x_end="預定完成_繪圖", y=task_col, color=color_col, color_discrete_map=color_map, height=400+len(p_df)*30, custom_data=['預定開始_str', '預定完成_str'])
+    
+    # 💡 強制覆寫系統提示框，只顯示我們給的純文字！
+    fig.update_traces(opacity=0.3, hovertemplate="<b>%{y}</b><br>預定區間: %{customdata[0]} ~ %{customdata[1]}<extra></extra>")
+    
+    prog_df = draw_df.dropna(subset=['實際開始', '進度結束_繪圖']).copy()
     if not prog_df.empty:
-        fig2 = px.timeline(prog_df, x_start="實際開始", x_end="進度結束", y=task_col, color=color_col, color_discrete_map=color_map)
-        fig2.update_traces(opacity=1.0, marker_pattern_shape="/") 
+        prog_df['實際開始_str'] = prog_df['實際開始'].dt.strftime('%Y-%m-%d')
+        prog_df['實際完成_str'] = prog_df['實際完成'].dt.strftime('%Y-%m-%d').fillna('進行中')
+        prog_df['完成度_str'] = prog_df['完成度(%)'].astype(str) + '%'
+        
+        fig2 = px.timeline(prog_df, x_start="實際開始", x_end="進度結束_繪圖", y=task_col, color=color_col, color_discrete_map=color_map, custom_data=['實際開始_str', '實際完成_str', '完成度_str'])
+        # 💡 同樣強制覆寫實際進度的提示框
+        fig2.update_traces(opacity=1.0, marker_pattern_shape="/", hovertemplate="<b>%{y} (實際)</b><br>實際區間: %{customdata[0]} ~ %{customdata[1]}<br>目前進度: %{customdata[2]}<extra></extra>") 
         for tr in fig2.data: tr.showlegend = False; fig.add_trace(tr)
             
     fig.update_layout(barmode='overlay') 
@@ -389,18 +400,19 @@ def draw_gantt(df, title, color_col):
         if show_leg: ms_leg_set.add(leg_name)
         
         vendor_info = f"<br>廠商: {m['施工廠商']}" if '施工廠商' in m else ""
-        hover_text = f"<b>里程碑：{m[task_col]}</b><br>區域: {region}{vendor_info}<br>日期: %{{x|%Y-%m-%d}}<extra></extra>"
+        hover_text = f"<b>里程碑：{m[task_col]}</b><br>區域: {region}{vendor_info}<br>日期: {m['預定開始'].strftime('%Y-%m-%d')}<extra></extra>"
         
         if is_done:
             fig.add_trace(go.Scatter(
-                x=[m['實際完成']], y=[m[task_col]], mode='text', 
+                # 💡 優化：把里程碑標記移到格子「正中央」，畫面看起來更舒服
+                x=[m['實際完成'] + pd.Timedelta(hours=12)], y=[m[task_col]], mode='text', 
                 text=[f"✅ {m['實際完成'].strftime('%m/%d')}"], textfont=dict(color='green', size=16, weight='bold'), 
                 name=leg_name, legendgroup=leg_name, showlegend=show_leg,
                 hovertemplate=hover_text
             ))
         else:
             fig.add_trace(go.Scatter(
-                x=[m['預定開始']], y=[m[task_col]], mode='markers+text', 
+                x=[m['預定開始'] + pd.Timedelta(hours=12)], y=[m[task_col]], mode='markers+text', 
                 marker=dict(symbol='star', size=18, color=color_map.get(cat, 'gray'), line=dict(color='black', width=1)), 
                 text=[f" {m['預定開始'].strftime('%m/%d')}"], textposition='middle right', textfont=dict(color='black', size=12), 
                 name=leg_name, legendgroup=leg_name, showlegend=show_leg,
@@ -413,8 +425,8 @@ def draw_gantt(df, title, color_col):
 
     fig.update_yaxes(categoryorder='array', categoryarray=p_df[task_col].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
     
-    # 💡 核心修正 2：強制設定 hoverformat="%Y-%m-%d"，這樣滑鼠停留在長條圖上時，只會顯示乾淨的日期，隱藏我們偷偷加的 23:59:59
-    fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12), hoverformat="%Y-%m-%d")
+    # 移除了容易誤導的 hoverformat
+    fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12))
     st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']})
 
 with tab_g1:
@@ -423,7 +435,6 @@ with tab_g1:
 
 with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
-# ==========================================
 # 8. 動態備註與每日日誌系統
 # ==========================================
 st.divider()
