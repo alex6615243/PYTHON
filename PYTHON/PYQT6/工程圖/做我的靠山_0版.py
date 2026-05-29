@@ -421,7 +421,7 @@ with tab_g2:
 # 8. 動態備註與每日日誌系統
 # ==========================================
 st.divider()
-st.subheader("施工日誌與專案備註")
+st.subheader("施工日誌")
 c1, c2 = st.columns([1, 1])
 
 with c1:
