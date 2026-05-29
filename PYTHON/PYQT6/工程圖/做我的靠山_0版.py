@@ -325,7 +325,7 @@ with st.expander("試車任務管理", expanded=True):
 # 7. 圖表生成
 # ==========================================
 st.divider()
-tab_g1, tab_g2 = st.tabs(["施工進度圖表", "試車排程圖表"])
+tab_g1, tab_g2 = st.tabs(["📊 施工進度圖表", "⚙️ 試車排程圖表"])
 
 def draw_gantt(df, title, color_col):
     p_df = df.dropna(subset=[df.columns[1], '預定開始', '預定完成']).copy()
@@ -337,6 +337,11 @@ def draw_gantt(df, title, color_col):
     p_df['實際完成'] = pd.to_datetime(p_df['實際完成'], errors='coerce')
     p_df = p_df.sort_values("預定開始")
     
+    # 💡 核心修正 1：將所有完成日期推延到該日的 23:59:59，賦予同日完工的任務實體寬度
+    p_df['預定完成'] = p_df['預定完成'] + pd.Timedelta(hours=23, minutes=59, seconds=59)
+    mask_act = p_df['實際完成'].notnull()
+    p_df.loc[mask_act, '實際完成'] = p_df.loc[mask_act, '實際完成'] + pd.Timedelta(hours=23, minutes=59, seconds=59)
+
     p_df['進度結束'] = pd.NaT
 
     task_col = p_df.columns[1] 
@@ -378,7 +383,6 @@ def draw_gantt(df, title, color_col):
         region = m['區域']
         is_done = pd.notnull(m['實際完成'])
         
-        # 💡 核心修正：讓右側圖例名稱動態跟隨您選擇的分類維度 (cat)，並加上「里程碑」字樣使其更清晰
         leg_name = f"{cat}(完成)" if is_done else f"{cat}"
         
         show_leg = leg_name not in ms_leg_set
@@ -408,7 +412,9 @@ def draw_gantt(df, title, color_col):
     fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
 
     fig.update_yaxes(categoryorder='array', categoryarray=p_df[task_col].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
-    fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12))
+    
+    # 💡 核心修正 2：強制設定 hoverformat="%Y-%m-%d"，這樣滑鼠停留在長條圖上時，只會顯示乾淨的日期，隱藏我們偷偷加的 23:59:59
+    fig.update_xaxes(showgrid=True, gridcolor='black', tickformat="%m/%d", dtick="D1", tickfont=dict(color="black", size=12), hoverformat="%Y-%m-%d")
     st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']})
 
 with tab_g1:
