@@ -618,3 +618,44 @@ components.html(
     height=0,
     width=0,
 )
+# ==========================================
+# 12. 專案檔案上傳區 (新增功能)
+# ==========================================
+st.divider()
+st.subheader("📎 專案雲端檔案庫")
+
+# 1. 建立 Streamlit 上傳元件 (可以限制只能傳照片或 PDF 等)
+uploaded_file = st.file_uploader(
+    f"上傳【{selected_project}】的現場照片或報告：", 
+    type=["png", "jpg", "jpeg", "pdf", "csv"]
+)
+
+# 2. 當使用者選好檔案後，顯示上傳按鈕
+if uploaded_file is not None:
+    # 顯示檔案基本資訊
+    st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
+    
+    if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
+        with st.spinner("檔案飛往雲端中..."):
+            try:
+                # 讀取檔案二進位內容
+                file_bytes = uploaded_file.getvalue()
+                
+                # 建立存放路徑：我們讓檔案分類在「專案名稱」的資料夾底下
+                # 加上 timestamp 防止同名檔案互相覆蓋
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                file_path = f"{selected_project}/{timestamp}_{uploaded_file.name}"
+                
+                # 呼叫 Supabase Storage API 進行上傳
+                # (注意：這裡的 "project-files" 要跟您在第一步建的 Bucket 名稱一樣)
+                res = supabase.storage.from_("project-files").upload(
+                    file=file_bytes,
+                    path=file_path,
+                    file_options={"content-type": uploaded_file.type}
+                )
+                
+                st.success(f"✅ 檔案上傳成功！")
+                st.balloons() # 放個氣球慶祝一下
+            except Exception as e:
+                # 如果遇到 Row Level Security (RLS) 錯誤，記得去 Supabase Storage 設定 Policy 允許寫入
+                st.error(f"❌ 上傳失敗: {e}")
