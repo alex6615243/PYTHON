@@ -609,7 +609,7 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (支援分類標籤 - 安全檔名版)
+# 12. 專案檔案上傳區 (終極防撞檔名版)
 # ==========================================
 import requests
 import urllib.parse
@@ -639,13 +639,14 @@ if uploaded_file is not None:
                 file_bytes = uploaded_file.getvalue()
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 
+                # 將專案名稱與分類名稱的危險符號變成底線，檔名則盡量保持原狀但去除空白
                 safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
                 safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
-                safe_filename = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', uploaded_file.name)
+                safe_filename = uploaded_file.name.replace(" ", "_").replace("#", "_")
                 
-                # 💡 核心修正：移除方括號，改用安全的 "---" 作為分隔符
-                # 格式變成：_3RH_vessel/設計圖---20260601_0234---W3692407.pdf
-                raw_path = f"{safe_folder}/{safe_category}---{timestamp}---{safe_filename}"
+                # 💡 終極解法：使用 "~" 波浪號作為特殊分隔符號，一般檔名極少出現波浪號
+                # 格式變成：_3RH_vessel/設計圖~20260601_0234~W3692407-REV.01.pdf
+                raw_path = f"{safe_folder}/{safe_category}~{timestamp}~{safe_filename}"
                 safe_path = urllib.parse.quote(raw_path)
                 
                 url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
@@ -669,7 +670,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (動態頁籤分類 - 安全讀取版)
+# 13. 專案檔案展示區 (對應波浪號拆解版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
@@ -687,12 +688,12 @@ try:
         for f in file_list:
             fname = f['name']
             
-            # 💡 核心修正：使用 "---" 來切分檔名，抓出分類、時間與真實檔名
-            parts = fname.split("---")
+            # 💡 核心修正：使用 "~" 波浪號來切分檔名
+            parts = fname.split("~")
             
             if len(parts) >= 3:
                 cat = parts[0]
-                actual_name = parts[-1] # 只取最後一段作為顯示檔名，隱藏醜醜的時間戳記
+                actual_name = parts[-1] 
             else:
                 cat = "未分類檔案"
                 actual_name = fname
