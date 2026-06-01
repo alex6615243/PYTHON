@@ -644,10 +644,11 @@ if uploaded_file is not None:
                 safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
                 safe_filename = uploaded_file.name.replace(" ", "_").replace("#", "_")
                 
-                # 💡 終極解法：使用 "~" 波浪號作為特殊分隔符號，一般檔名極少出現波浪號
-                # 格式變成：_3RH_vessel/設計圖~20260601_0234~W3692407-REV.01.pdf
+                # 組裝原始路徑
                 raw_path = f"{safe_folder}/{safe_category}~{timestamp}~{safe_filename}"
-                safe_path = urllib.parse.quote(raw_path)
+                
+                # 💡 終極修正點：加入 safe='/~'，保護「斜線」與「波浪號」不被亂碼化！
+                safe_path = urllib.parse.quote(raw_path, safe='/~')
                 
                 url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
                 headers = {
@@ -670,7 +671,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (對應波浪號拆解版)
+# 13. 專案檔案展示區 (動態頁籤分類 - 安全讀取版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
@@ -688,7 +689,7 @@ try:
         for f in file_list:
             fname = f['name']
             
-            # 💡 核心修正：使用 "~" 波浪號來切分檔名
+            # 使用 "~" 波浪號來切分檔名
             parts = fname.split("~")
             
             if len(parts) >= 3:
@@ -701,7 +702,8 @@ try:
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            public_url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname)}"
+            # 💡 修正點：在產生下載網址時，同樣保護斜線與波浪號
+            public_url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname, safe='/~')}"
             
             categorized_files[cat].append({
                 "name": actual_name,
