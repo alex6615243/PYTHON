@@ -609,11 +609,12 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (終極防撞與斜線保護版)
+# 12. 專案檔案上傳區 (官方套件 + 終極實體暫存檔版)
 # ==========================================
-import requests
+import os
+import tempfile
+import datetime
 import urllib.parse
-import re
 
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
@@ -635,48 +636,50 @@ if uploaded_file is not None:
     
     if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
         with st.spinner("檔案飛往雲端中..."):
+            
+            file_bytes = uploaded_file.getvalue()
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # 避免資料夾與檔名有斜線，其餘中文與符號保持原狀
+            safe_folder = selected_project.replace("/", "_")
+            safe_category = final_category.replace("/", "_")
+            safe_filename = uploaded_file.name.replace("/", "_")
+            
+            # 組合出乾淨的雲端路徑
+            raw_path = f"{safe_folder}/{safe_category}__{timestamp}__{safe_filename}"
+            
+            # 💡 終極魔法：使用系統底層的 mkstemp 建立「絕對真實的硬碟檔案」
+            fd, tmp_path = tempfile.mkstemp()
             try:
-                file_bytes = uploaded_file.getvalue()
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                # 徹底將位元組寫入硬碟並關閉通道 (完美消滅 No content provided 錯誤)
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(file_bytes)
                 
-                # 確保名稱裡只有英數、中文與底線
-                safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
-                safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
-                safe_filename = uploaded_file.name.replace(" ", "_").replace("#", "_")
+                # 呼叫官方套件，它會自動處理中文編碼與斜線，絕不報錯
+                res = supabase.storage.from_("project_files").upload(
+                    path=raw_path,
+                    file=tmp_path,
+                    file_options={"content-type": uploaded_file.type}
+                )
                 
-                # 組合出包含斜線的原始路徑
-                raw_path = f"{safe_folder}/{safe_category}__{timestamp}__{safe_filename}"
-                
-                # 💡 終極關鍵：加上 safe='/'，保護斜線不被轉碼，完美避開防火牆攔截！
-                safe_path = urllib.parse.quote(raw_path, safe='/')
-                
-                url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/project_files/{safe_path}"
-                headers = {
-                    "Authorization": f"Bearer {st.secrets['SUPABASE_KEY']}",
-                    "apikey": st.secrets['SUPABASE_KEY'],
-                    "Content-Type": uploaded_file.type or "application/octet-stream"
-                }
-                
-                res = requests.post(url, data=file_bytes, headers=headers)
-                
-                if res.status_code == 200:
-                    st.success(f"✅ 檔案上傳成功！")
-                    st.balloons()
-                    st.rerun() 
-                else:
-                    st.error(f"❌ 上傳失敗 (代碼 {res.status_code}): {res.text}")
-                    
+                st.success(f"✅ 檔案上傳成功！")
+                st.balloons()
+                st.rerun() 
             except Exception as e:
-                st.error(f"❌ 系統錯誤: {e}")
+                st.error(f"❌ 上傳失敗: {e}")
+            finally:
+                # 任務結束，刪除硬碟上的暫存檔，保持乾淨
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
 
 
 # ==========================================
-# 13. 專案檔案展示區 (安全網址讀取版)
+# 13. 專案檔案展示區 (官方套件相容讀取版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
 
-safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
+safe_folder = selected_project.replace("/", "_")
 
 try:
     file_list = supabase.storage.from_("project_files").list(safe_folder)
@@ -694,7 +697,6 @@ try:
             if not fname:
                 continue
             
-            # 使用雙底線拆解檔名與分類
             parts = fname.split("__")
             
             if len(parts) >= 3:
@@ -707,7 +709,7 @@ try:
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            # 💡 產生下載連結時，也將中文字資料夾與檔名安全編碼
+            # 官方套件產生的檔案，直接將中文字資料夾與檔名編碼為安全網址即可
             enc_folder = urllib.parse.quote(safe_folder)
             enc_fname = urllib.parse.quote(fname)
             public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{enc_fname}"
