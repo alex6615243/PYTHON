@@ -6,6 +6,7 @@ import io
 import json
 from supabase import create_client, Client
 import datetime
+import io
 
 # ==========================================
 # 0. 頁面基本設定 (⚠️ 必須在第一行)
