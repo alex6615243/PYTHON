@@ -609,7 +609,7 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (雙底線最安全版)
+# 12. 專案檔案上傳區 (終極防撞與斜線保護版)
 # ==========================================
 import requests
 import urllib.parse
@@ -642,13 +642,13 @@ if uploaded_file is not None:
                 # 確保名稱裡只有英數、中文與底線
                 safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
                 safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
-                safe_filename = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', uploaded_file.name)
+                safe_filename = uploaded_file.name.replace(" ", "_").replace("#", "_")
                 
-                # 💡 終極解法：使用「雙底線 __」作為分隔符號！這是所有伺服器都100%接受的格式
-                # 存檔格式會變成：W442_新增UT機/設計圖__20260601_0234__W3692407.pdf
+                # 組合出包含斜線的原始路徑
                 raw_path = f"{safe_folder}/{safe_category}__{timestamp}__{safe_filename}"
                 
-                safe_path = urllib.parse.quote(raw_path)
+                # 💡 終極關鍵：加上 safe='/'，保護斜線不被轉碼，完美避開防火牆攔截！
+                safe_path = urllib.parse.quote(raw_path, safe='/')
                 
                 url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/project_files/{safe_path}"
                 headers = {
@@ -671,7 +671,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (雙底線拆解版)
+# 13. 專案檔案展示區 (安全網址讀取版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
@@ -694,7 +694,7 @@ try:
             if not fname:
                 continue
             
-            # 💡 對應使用「雙底線 __」來拆解檔名
+            # 使用雙底線拆解檔名與分類
             parts = fname.split("__")
             
             if len(parts) >= 3:
@@ -707,7 +707,10 @@ try:
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname)}"
+            # 💡 產生下載連結時，也將中文字資料夾與檔名安全編碼
+            enc_folder = urllib.parse.quote(safe_folder)
+            enc_fname = urllib.parse.quote(fname)
+            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{enc_fname}"
             
             categorized_files[cat].append({
                 "name": actual_name,
