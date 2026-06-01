@@ -686,8 +686,15 @@ try:
     else:
         categorized_files = {}
         
-        for f in file_list:
-            fname = f['name']
+       for f in file_list:
+            # 💡 第一道防護：確保抓下來的東西真的是「字典」，避開不明錯誤物件
+            if not isinstance(f, dict):
+                continue
+                
+            # 💡 第二道防護：使用 .get() 安全抓取檔名，這樣就算沒有 name 也不會報錯！
+            fname = f.get('name', '')
+            if not fname:
+                continue
             
             # 使用 "~" 波浪號來切分檔名
             parts = fname.split("~")
@@ -702,7 +709,6 @@ try:
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            # 💡 修正點：在產生下載網址時，同樣保護斜線與波浪號
             public_url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname, safe='/~')}"
             
             categorized_files[cat].append({
@@ -710,13 +716,3 @@ try:
                 "url": public_url,
                 "created_at": f.get("created_at", "")[:10] 
             })
-        
-        tabs = st.tabs(list(categorized_files.keys()))
-        
-        for i, (cat, files) in enumerate(categorized_files.items()):
-            with tabs[i]:
-                for file_info in files:
-                    st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** 　*(上傳於: {file_info['created_at']})*")
-
-except Exception as e:
-    st.info("尚無上傳任何檔案或找不到專案資料夾。")
