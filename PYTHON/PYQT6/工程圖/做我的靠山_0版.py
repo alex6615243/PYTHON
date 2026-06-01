@@ -9,6 +9,9 @@ import datetime
 import io
 import tempfile
 import os
+import requests
+import urllib.parse
+import re
 
 # ==========================================
 # 0. 頁面基本設定 (⚠️ 必須在第一行)
@@ -622,55 +625,54 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (底層 API 直連版)
+# 12. 專案檔案上傳區 (消毒過濾 + 底層直連版)
 # ==========================================
-import requests
-import urllib.parse
 
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
 
-# 1. 建立 Streamlit 上傳元件
 uploaded_file = st.file_uploader(
     f"上傳【{selected_project}】的現場照片或報告：", 
     type=["png", "jpg", "jpeg", "pdf", "csv"]
 )
 
-# 2. 當使用者選好檔案後，顯示上傳按鈕
 if uploaded_file is not None:
     st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
     
     if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
         with st.spinner("檔案飛往雲端中..."):
             try:
-                # 取得純粹的檔案二進位內容
                 file_bytes = uploaded_file.getvalue()
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 
-                # 組裝原始路徑 (例如: W442 新增UT機/20260529_100000_photo.jpg)
-                raw_path = f"{selected_project}/{timestamp}_{uploaded_file.name}"
+                # 💡 核心魔法：消毒過濾器！
+                # 把專案名稱和檔名中的「#」、「空白」或其他危險符號，全部變成底線 "_"
+                # 這樣 "#3RH vessel" 就會安全地變成 "_3RH_vessel"
+                safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
+                safe_filename = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', uploaded_file.name)
                 
-                # 💡 核心魔法：將中文的專案名稱與檔名進行「URL 安全編碼」，防止網址錯亂
+                # 組裝乾淨的路徑
+                raw_path = f"{safe_folder}/{timestamp}_{safe_filename}"
+                
+                # 將中文字轉換為網址安全格式
                 safe_path = urllib.parse.quote(raw_path)
                 
                 # 直接組合 Supabase 最底層的 REST API 網址
                 url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
                 
-                # 附上專案鑰匙與檔案格式
                 headers = {
                     "Authorization": f"Bearer {st.secrets['SUPABASE_KEY']}",
                     "apikey": st.secrets['SUPABASE_KEY'],
                     "Content-Type": uploaded_file.type or "application/octet-stream"
                 }
                 
-                # 發射！直接硬塞資料流給伺服器，繞過所有 Bug
+                # 發射！
                 res = requests.post(url, data=file_bytes, headers=headers)
                 
                 if res.status_code == 200:
-                    st.success(f"✅ 檔案上傳成功！")
-                    st.balloons() # 放個氣球慶祝
+                    st.success(f"✅ 檔案上傳成功！(已安全存入: {safe_folder} 資料夾)")
+                    st.balloons() # 這次絕對要放氣球了
                 else:
-                    # 如果有權限等問題，這裡會把 Supabase 的真實錯誤完整印出來
                     st.error(f"❌ 上傳失敗 (代碼 {res.status_code}): {res.text}")
                     
             except Exception as e:
