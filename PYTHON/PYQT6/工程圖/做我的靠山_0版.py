@@ -632,7 +632,7 @@ st.divider()
 st.subheader("📎 專案雲端檔案庫")
 
 uploaded_file = st.file_uploader(f"上傳【{selected_project}】的現場照片或報告：")
-)
+
 
 if uploaded_file is not None:
     st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
