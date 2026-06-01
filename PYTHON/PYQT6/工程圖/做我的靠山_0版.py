@@ -622,12 +622,15 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (新增功能)
+# 12. 專案檔案上傳區 (底層 API 直連版)
 # ==========================================
+import requests
+import urllib.parse
+
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
 
-# 1. 建立 Streamlit 上傳元件 (可以限制只能傳照片或 PDF 等)
+# 1. 建立 Streamlit 上傳元件
 uploaded_file = st.file_uploader(
     f"上傳【{selected_project}】的現場照片或報告：", 
     type=["png", "jpg", "jpeg", "pdf", "csv"]
@@ -635,36 +638,40 @@ uploaded_file = st.file_uploader(
 
 # 2. 當使用者選好檔案後，顯示上傳按鈕
 if uploaded_file is not None:
-    # 顯示檔案基本資訊
     st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
     
     if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
         with st.spinner("檔案飛往雲端中..."):
             try:
+                # 取得純粹的檔案二進位內容
                 file_bytes = uploaded_file.getvalue()
-                
-                # 建立雲端存放路徑：加上 timestamp 防止同名檔案互相覆蓋
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                file_path = f"{selected_project}/{timestamp}_{uploaded_file.name}"
                 
-                # 💡 終極解法：在伺服器建立一個真實的暫存檔，上傳完畢後自動刪除
-                with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}") as tmp_file:
-                    tmp_file.write(file_bytes)
-                    tmp_file_path = tmp_file.name # 取得這個真實檔案的硬碟路徑 (字串)
-
-                try:
-                    # 傳入真實檔案的「路徑字串 (tmp_file_path)」，完美避開所有型態報錯
-                    res = supabase.storage.from_("project_files").upload(
-                        path=file_path,
-                        file=tmp_file_path,
-                        file_options={"content-type": uploaded_file.type}
-                    )
+                # 組裝原始路徑 (例如: W442 新增UT機/20260529_100000_photo.jpg)
+                raw_path = f"{selected_project}/{timestamp}_{uploaded_file.name}"
+                
+                # 💡 核心魔法：將中文的專案名稱與檔名進行「URL 安全編碼」，防止網址錯亂
+                safe_path = urllib.parse.quote(raw_path)
+                
+                # 直接組合 Supabase 最底層的 REST API 網址
+                url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
+                
+                # 附上專案鑰匙與檔案格式
+                headers = {
+                    "Authorization": f"Bearer {st.secrets['SUPABASE_KEY']}",
+                    "apikey": st.secrets['SUPABASE_KEY'],
+                    "Content-Type": uploaded_file.type or "application/octet-stream"
+                }
+                
+                # 發射！直接硬塞資料流給伺服器，繞過所有 Bug
+                res = requests.post(url, data=file_bytes, headers=headers)
+                
+                if res.status_code == 200:
                     st.success(f"✅ 檔案上傳成功！")
-                    st.balloons() # 放個氣球慶祝一下
-                finally:
-                    # 🧹 拔除暫存檔，保持系統乾淨，不佔用硬碟空間
-                    if os.path.exists(tmp_file_path):
-                        os.remove(tmp_file_path)
-
+                    st.balloons() # 放個氣球慶祝
+                else:
+                    # 如果有權限等問題，這裡會把 Supabase 的真實錯誤完整印出來
+                    st.error(f"❌ 上傳失敗 (代碼 {res.status_code}): {res.text}")
+                    
             except Exception as e:
-                st.error(f"❌ 上傳失敗: {e}")
+                st.error(f"❌ 系統錯誤: {e}")
