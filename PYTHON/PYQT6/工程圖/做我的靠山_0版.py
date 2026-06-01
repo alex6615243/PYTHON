@@ -611,9 +611,6 @@ components.html(
 # ==========================================
 # 12. 專案檔案上傳區 (終極防撞檔名版)
 # ==========================================
-import requests
-import urllib.parse
-import re
 
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
@@ -686,7 +683,7 @@ try:
     else:
         categorized_files = {}
         
-       for f in file_list:
+        for f in file_list:
             # 💡 第一道防護：確保抓下來的東西真的是「字典」，避開不明錯誤物件
             if not isinstance(f, dict):
                 continue
@@ -716,3 +713,13 @@ try:
                 "url": public_url,
                 "created_at": f.get("created_at", "")[:10] 
             })
+        
+        tabs = st.tabs(list(categorized_files.keys()))
+        
+        for i, (cat, files) in enumerate(categorized_files.items()):
+            with tabs[i]:
+                for file_info in files:
+                    st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** 　*(上傳於: {file_info['created_at']})*")
+
+except Exception as e:
+    st.info("尚無上傳任何檔案或找不到專案資料夾。")
