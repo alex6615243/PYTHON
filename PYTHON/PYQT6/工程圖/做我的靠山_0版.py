@@ -648,7 +648,7 @@ if uploaded_file is not None:
                 
                 # 呼叫 Supabase Storage API 進行上傳
                 # (注意：這裡的 "project-files" 要跟您在第一步建的 Bucket 名稱一樣)
-                res = supabase.storage.from_("project-files").upload(
+                res = supabase.storage.from_("project_files").upload(
                     file=file_bytes,
                     path=file_path,
                     file_options={"content-type": uploaded_file.type}
