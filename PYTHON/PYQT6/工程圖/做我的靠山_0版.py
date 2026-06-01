@@ -570,23 +570,7 @@ with st.sidebar.expander("檔案管理"):
                 st.rerun()
 
 # ==========================================
-# 10. 通知測試
-# ==========================================
-st.divider()
-st.subheader("LINE 通知測試")
-
-if st.button("測試", key="btn_test_line"):
-    with st.spinner("LINE 通知發送中..."):
-        try:
-            res = supabase.functions.invoke(
-                "notify-tasks", 
-                invoke_options={"body": {"test": True}}
-            )
-            st.success("✅ 已觸發通知！請查看 LINE")
-        except Exception as e:
-            st.error(f"❌ 呼叫失敗：{e}")
-# ==========================================
-# 11. 魔法變色系統 (JavaScript 強制渲染)
+# 10. 魔法變色系統 (JavaScript 強制渲染)
 # ==========================================
 import streamlit.components.v1 as components
 
@@ -625,7 +609,7 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (支援分類標籤)
+# 11. 專案檔案上傳區 (支援分類標籤)
 # ==========================================
 import requests
 import urllib.parse
@@ -687,7 +671,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (動態頁籤分類)
+# 12. 專案檔案展示區 (動態頁籤分類)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
