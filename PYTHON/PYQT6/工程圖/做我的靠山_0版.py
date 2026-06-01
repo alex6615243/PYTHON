@@ -638,24 +638,22 @@ if uploaded_file is not None:
     if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
         with st.spinner("檔案飛往雲端中..."):
             try:
-                # 讀取檔案二進位內容
+                # 💡 核心修正：讀取檔案後，用 io.BytesIO 重新包裝成標準的「檔案物件」
                 file_bytes = uploaded_file.getvalue()
+                file_obj = io.BytesIO(file_bytes)
                 
-                # 建立存放路徑：我們讓檔案分類在「專案名稱」的資料夾底下
-                # 加上 timestamp 防止同名檔案互相覆蓋
+                # 建立存放路徑：加上 timestamp 防止同名檔案互相覆蓋
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 file_path = f"{selected_project}/{timestamp}_{uploaded_file.name}"
                 
-                # 呼叫 Supabase Storage API 進行上傳
-                # (注意：這裡的 "project-files" 要跟您在第一步建的 Bucket 名稱一樣)
+                # 呼叫 Supabase Storage API 進行上傳 (注意參數順序)
                 res = supabase.storage.from_("project_files").upload(
-                    file=file_bytes,
                     path=file_path,
+                    file=file_obj,  # <== 傳入包裝好的虛擬檔案物件
                     file_options={"content-type": uploaded_file.type}
                 )
                 
                 st.success(f"✅ 檔案上傳成功！")
                 st.balloons() # 放個氣球慶祝一下
             except Exception as e:
-                # 如果遇到 Row Level Security (RLS) 錯誤，記得去 Supabase Storage 設定 Policy 允許寫入
                 st.error(f"❌ 上傳失敗: {e}")
