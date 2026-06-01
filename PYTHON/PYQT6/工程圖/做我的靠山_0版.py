@@ -609,7 +609,7 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (消毒過濾 + 底層直連版)
+# 12. 專案檔案上傳區 (終極防撞檔名版)
 # ==========================================
 import requests
 import urllib.parse
@@ -618,7 +618,17 @@ import re
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
 
-uploaded_file = st.file_uploader(f"上傳【{selected_project}】的現場照片或報告：")
+c_cat, c_up = st.columns([1, 2])
+with c_cat:
+    file_category = st.selectbox("選擇檔案分類：", ["施工照片", "設計圖", "會議記錄", "報告書", "自訂分類..."])
+    if file_category == "自訂分類...":
+        custom_category = st.text_input("請輸入自訂分類名稱：", placeholder="例如：變更設計單")
+        final_category = custom_category if custom_category else "未分類"
+    else:
+        final_category = file_category
+
+with c_up:
+    uploaded_file = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：")
 
 if uploaded_file is not None:
     st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
@@ -629,35 +639,90 @@ if uploaded_file is not None:
                 file_bytes = uploaded_file.getvalue()
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 
-                # 💡 核心魔法：消毒過濾器！
-                # 把專案名稱和檔名中的「#」、「空白」或其他危險符號，全部變成底線 "_"
-                # 這樣 "#3RH vessel" 就會安全地變成 "_3RH_vessel"
+                # 將專案名稱與分類名稱的危險符號變成底線，檔名則盡量保持原狀但去除空白
                 safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
-                safe_filename = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', uploaded_file.name)
+                safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
+                safe_filename = uploaded_file.name.replace(" ", "_").replace("#", "_")
                 
-                # 組裝乾淨的路徑
-                raw_path = f"{safe_folder}/{timestamp}_{safe_filename}"
+                # 組裝原始路徑
+                raw_path = f"{safe_folder}/{safe_category}~{timestamp}~{safe_filename}"
                 
-                # 將中文字轉換為網址安全格式
-                safe_path = urllib.parse.quote(raw_path)
+                # 💡 終極修正點：加入 safe='/~'，保護「斜線」與「波浪號」不被亂碼化！
+                safe_path = urllib.parse.quote(raw_path, safe='/~')
                 
-                # 直接組合 Supabase 最底層的 REST API 網址
                 url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
-                
                 headers = {
                     "Authorization": f"Bearer {st.secrets['SUPABASE_KEY']}",
                     "apikey": st.secrets['SUPABASE_KEY'],
                     "Content-Type": uploaded_file.type or "application/octet-stream"
                 }
                 
-                # 發射！
                 res = requests.post(url, data=file_bytes, headers=headers)
                 
                 if res.status_code == 200:
-                    st.success(f"✅ 檔案上傳成功！(已安全存入: {safe_folder} 資料夾)")
-                    st.balloons() # 這次絕對要放氣球了
+                    st.success(f"✅ 檔案上傳成功！")
+                    st.balloons()
+                    st.rerun() 
                 else:
                     st.error(f"❌ 上傳失敗 (代碼 {res.status_code}): {res.text}")
                     
             except Exception as e:
                 st.error(f"❌ 系統錯誤: {e}")
+
+
+# ==========================================
+# 13. 專案檔案展示區 (動態頁籤分類 - 安全讀取版)
+# ==========================================
+st.divider()
+st.subheader(f"📂 【{selected_project}】檔案列表")
+
+safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
+
+try:
+    file_list = supabase.storage.from_("project_files").list(safe_folder)
+    
+    if not file_list or len(file_list) == 0 or (len(file_list) == 1 and file_list[0]['name'] == '.emptyFolderPlaceholder'):
+        st.info("尚無上傳任何檔案。")
+    else:
+        categorized_files = {}
+        
+        for f in file_list:
+            # 💡 第一道防護：確保抓下來的東西真的是「字典」，避開不明錯誤物件
+            if not isinstance(f, dict):
+                continue
+                
+            # 💡 第二道防護：使用 .get() 安全抓取檔名，這樣就算沒有 name 也不會報錯！
+            fname = f.get('name', '')
+            if not fname:
+                continue
+            
+            # 使用 "~" 波浪號來切分檔名
+            parts = fname.split("~")
+            
+            if len(parts) >= 3:
+                cat = parts[0]
+                actual_name = parts[-1] 
+            else:
+                cat = "未分類檔案"
+                actual_name = fname
+                
+            if cat not in categorized_files:
+                categorized_files[cat] = []
+                
+            public_url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname, safe='/~')}"
+            
+            categorized_files[cat].append({
+                "name": actual_name,
+                "url": public_url,
+                "created_at": f.get("created_at", "")[:10] 
+            })
+        
+        tabs = st.tabs(list(categorized_files.keys()))
+        
+        for i, (cat, files) in enumerate(categorized_files.items()):
+            with tabs[i]:
+                for file_info in files:
+                    st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** 　*(上傳於: {file_info['created_at']})*")
+
+except Exception as e:
+    st.info("尚無上傳任何檔案或找不到專案資料夾。")
