@@ -7,6 +7,8 @@ import json
 from supabase import create_client, Client
 import datetime
 import io
+import tempfile
+import os
 
 # ==========================================
 # 0. 頁面基本設定 (⚠️ 必須在第一行)
@@ -639,22 +641,30 @@ if uploaded_file is not None:
     if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
         with st.spinner("檔案飛往雲端中..."):
             try:
-                # 💡 核心修正：讀取檔案後，用 io.BytesIO 重新包裝成標準的「檔案物件」
                 file_bytes = uploaded_file.getvalue()
-                file_obj = io.BytesIO(file_bytes)
                 
-                # 建立存放路徑：加上 timestamp 防止同名檔案互相覆蓋
+                # 建立雲端存放路徑：加上 timestamp 防止同名檔案互相覆蓋
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 file_path = f"{selected_project}/{timestamp}_{uploaded_file.name}"
                 
-                # 呼叫 Supabase Storage API 進行上傳 (注意參數順序)
-                res = supabase.storage.from_("project_files").upload(
-                    path=file_path,
-                    file=file_obj,  # <== 傳入包裝好的虛擬檔案物件
-                    file_options={"content-type": uploaded_file.type}
-                )
-                
-                st.success(f"✅ 檔案上傳成功！")
-                st.balloons() # 放個氣球慶祝一下
+                # 💡 終極解法：在伺服器建立一個真實的暫存檔，上傳完畢後自動刪除
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}") as tmp_file:
+                    tmp_file.write(file_bytes)
+                    tmp_file_path = tmp_file.name # 取得這個真實檔案的硬碟路徑 (字串)
+
+                try:
+                    # 傳入真實檔案的「路徑字串 (tmp_file_path)」，完美避開所有型態報錯
+                    res = supabase.storage.from_("project_files").upload(
+                        path=file_path,
+                        file=tmp_file_path,
+                        file_options={"content-type": uploaded_file.type}
+                    )
+                    st.success(f"✅ 檔案上傳成功！")
+                    st.balloons() # 放個氣球慶祝一下
+                finally:
+                    # 🧹 拔除暫存檔，保持系統乾淨，不佔用硬碟空間
+                    if os.path.exists(tmp_file_path):
+                        os.remove(tmp_file_path)
+
             except Exception as e:
                 st.error(f"❌ 上傳失敗: {e}")
