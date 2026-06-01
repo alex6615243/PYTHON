@@ -671,7 +671,67 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 12. 專案檔案展示區 (動態頁籤分類)
+# 12. 專案檔案上傳區 (支援分類標籤 - 安全檔名版)
+# ==========================================
+import requests
+import urllib.parse
+import re
+
+st.divider()
+st.subheader("📎 專案雲端檔案庫")
+
+c_cat, c_up = st.columns([1, 2])
+with c_cat:
+    file_category = st.selectbox("選擇檔案分類：", ["施工照片", "設計圖", "會議記錄", "報告書", "自訂分類..."])
+    if file_category == "自訂分類...":
+        custom_category = st.text_input("請輸入自訂分類名稱：", placeholder="例如：變更設計單")
+        final_category = custom_category if custom_category else "未分類"
+    else:
+        final_category = file_category
+
+with c_up:
+    uploaded_file = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：")
+
+if uploaded_file is not None:
+    st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
+    
+    if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
+        with st.spinner("檔案飛往雲端中..."):
+            try:
+                file_bytes = uploaded_file.getvalue()
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
+                safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
+                safe_filename = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', uploaded_file.name)
+                
+                # 💡 核心修正：移除方括號，改用安全的 "---" 作為分隔符
+                # 格式變成：_3RH_vessel/設計圖---20260601_0234---W3692407.pdf
+                raw_path = f"{safe_folder}/{safe_category}---{timestamp}---{safe_filename}"
+                safe_path = urllib.parse.quote(raw_path)
+                
+                url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
+                headers = {
+                    "Authorization": f"Bearer {st.secrets['SUPABASE_KEY']}",
+                    "apikey": st.secrets['SUPABASE_KEY'],
+                    "Content-Type": uploaded_file.type or "application/octet-stream"
+                }
+                
+                res = requests.post(url, data=file_bytes, headers=headers)
+                
+                if res.status_code == 200:
+                    st.success(f"✅ 檔案上傳成功！")
+                    st.balloons()
+                    st.rerun() 
+                else:
+                    st.error(f"❌ 上傳失敗 (代碼 {res.status_code}): {res.text}")
+                    
+            except Exception as e:
+                st.error(f"❌ 系統錯誤: {e}")
+
+
+# ==========================================
+# 13. 專案檔案展示區 (動態頁籤分類 - 安全讀取版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
@@ -679,23 +739,22 @@ st.subheader(f"📂 【{selected_project}】檔案列表")
 safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
 
 try:
-    # 呼叫 Supabase 的 Python 套件，列出該專案資料夾下的所有檔案
     file_list = supabase.storage.from_("project_files").list(safe_folder)
     
     if not file_list or len(file_list) == 0 or (len(file_list) == 1 and file_list[0]['name'] == '.emptyFolderPlaceholder'):
         st.info("尚無上傳任何檔案。")
     else:
-        # 建立一個字典來存放不同分類的檔案
         categorized_files = {}
         
         for f in file_list:
             fname = f['name']
             
-            # 解析分類名稱，找尋我們剛才設定的 "[分類名稱]--" 格式
-            match = re.match(r'^\[(.*?)\]--(.*)', fname)
-            if match:
-                cat = match.group(1)
-                actual_name = match.group(2)
+            # 💡 核心修正：使用 "---" 來切分檔名，抓出分類、時間與真實檔名
+            parts = fname.split("---")
+            
+            if len(parts) >= 3:
+                cat = parts[0]
+                actual_name = parts[-1] # 只取最後一段作為顯示檔名，隱藏醜醜的時間戳記
             else:
                 cat = "未分類檔案"
                 actual_name = fname
@@ -703,22 +762,19 @@ try:
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            # 建立下載/預覽連結
             public_url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname)}"
             
             categorized_files[cat].append({
                 "name": actual_name,
                 "url": public_url,
-                "created_at": f.get("created_at", "")[:10] # 取出上傳日期
+                "created_at": f.get("created_at", "")[:10] 
             })
         
-        # 💡 使用動態頁籤 (Tabs) 來展示不同類別的檔案！
         tabs = st.tabs(list(categorized_files.keys()))
         
         for i, (cat, files) in enumerate(categorized_files.items()):
             with tabs[i]:
                 for file_info in files:
-                    # 使用 Markdown 語法產生超連結
                     st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** 　*(上傳於: {file_info['created_at']})*")
 
 except Exception as e:
