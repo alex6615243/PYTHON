@@ -631,9 +631,7 @@ components.html(
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
 
-uploaded_file = st.file_uploader(
-    f"上傳【{selected_project}】的現場照片或報告：", 
-    type=["png", "jpg", "jpeg", "pdf", "csv"]
+uploaded_file = st.file_uploader(f"上傳【{selected_project}】的現場照片或報告：")
 )
 
 if uploaded_file is not None:
