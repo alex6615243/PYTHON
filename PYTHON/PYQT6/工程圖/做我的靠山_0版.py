@@ -609,7 +609,7 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (終極防撞檔名版)
+# 12. 專案檔案上傳區 (雙底線最安全版)
 # ==========================================
 import requests
 import urllib.parse
@@ -639,18 +639,18 @@ if uploaded_file is not None:
                 file_bytes = uploaded_file.getvalue()
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 
-                # 將專案名稱與分類名稱的危險符號變成底線，檔名則盡量保持原狀但去除空白
+                # 確保名稱裡只有英數、中文與底線
                 safe_folder = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', selected_project)
                 safe_category = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', final_category)
-                safe_filename = uploaded_file.name.replace(" ", "_").replace("#", "_")
+                safe_filename = re.sub(r'[^\w\u4e00-\u9fa5\.-]', '_', uploaded_file.name)
                 
-                # 組裝原始路徑
-                raw_path = f"{safe_folder}/{safe_category}~{timestamp}~{safe_filename}"
+                # 💡 終極解法：使用「雙底線 __」作為分隔符號！這是所有伺服器都100%接受的格式
+                # 存檔格式會變成：W442_新增UT機/設計圖__20260601_0234__W3692407.pdf
+                raw_path = f"{safe_folder}/{safe_category}__{timestamp}__{safe_filename}"
                 
-                # 💡 終極修正點：加入 safe='/~'，保護「斜線」與「波浪號」不被亂碼化！
-                safe_path = urllib.parse.quote(raw_path, safe='/~')
+                safe_path = urllib.parse.quote(raw_path)
                 
-                url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/project_files/{safe_path}"
+                url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/project_files/{safe_path}"
                 headers = {
                     "Authorization": f"Bearer {st.secrets['SUPABASE_KEY']}",
                     "apikey": st.secrets['SUPABASE_KEY'],
@@ -671,7 +671,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (動態頁籤分類 - 安全讀取版)
+# 13. 專案檔案展示區 (雙底線拆解版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
@@ -687,17 +687,15 @@ try:
         categorized_files = {}
         
         for f in file_list:
-            # 💡 第一道防護：確保抓下來的東西真的是「字典」，避開不明錯誤物件
             if not isinstance(f, dict):
                 continue
                 
-            # 💡 第二道防護：使用 .get() 安全抓取檔名，這樣就算沒有 name 也不會報錯！
             fname = f.get('name', '')
             if not fname:
                 continue
             
-            # 使用 "~" 波浪號來切分檔名
-            parts = fname.split("~")
+            # 💡 對應使用「雙底線 __」來拆解檔名
+            parts = fname.split("__")
             
             if len(parts) >= 3:
                 cat = parts[0]
@@ -709,7 +707,7 @@ try:
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            public_url = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname, safe='/~')}"
+            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{safe_folder}/{urllib.parse.quote(fname)}"
             
             categorized_files[cat].append({
                 "name": actual_name,
