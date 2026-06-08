@@ -609,12 +609,24 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (官方套件 + 終極實體暫存檔版)
+# 12. 專案檔案上傳區 (Base64 終極無敵編碼版)
 # ==========================================
 import os
 import tempfile
 import datetime
 import urllib.parse
+import base64
+
+# 💡 建立魔法函數：負責把中文變成純英數，以及把英數變回中文
+def encode_b64(text):
+    return base64.urlsafe_b64encode(text.encode('utf-8')).decode('utf-8').rstrip('=')
+
+def decode_b64(text):
+    pad = '=' * (4 - (len(text) % 4))
+    try:
+        return base64.urlsafe_b64decode((text + pad).encode('utf-8')).decode('utf-8')
+    except:
+        return text # 如果遇到非編碼的舊檔名，就保持原狀
 
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
@@ -636,28 +648,25 @@ if uploaded_file is not None:
     
     if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
         with st.spinner("檔案飛往雲端中..."):
-            
-            file_bytes = uploaded_file.getvalue()
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # 避免資料夾與檔名有斜線，其餘中文與符號保持原狀
-            safe_folder = selected_project.replace("/", "_")
-            safe_category = final_category.replace("/", "_")
-            safe_filename = uploaded_file.name.replace("/", "_")
-            
-            # 組合出乾淨的雲端路徑
-            raw_path = f"{safe_folder}/{safe_category}__{timestamp}__{safe_filename}"
-            
-            # 💡 終極魔法：使用系統底層的 mkstemp 建立「絕對真實的硬碟檔案」
-            fd, tmp_path = tempfile.mkstemp()
             try:
-                # 徹底將位元組寫入硬碟並關閉通道 (完美消滅 No content provided 錯誤)
+                file_bytes = uploaded_file.getvalue()
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # 💡 將所有含中文的部分，轉換為伺服器最喜歡的 Base64 純英數字！
+                enc_folder = encode_b64(selected_project)
+                enc_cat = encode_b64(final_category)
+                enc_name = encode_b64(uploaded_file.name)
+                
+                # 組合出 100% 符合伺服器資安規範的純英數路徑
+                raw_path = f"{enc_cat}__{timestamp}__{enc_name}"
+                
+                # 寫入實體暫存檔交給官方套件上傳，杜絕遺失
+                fd, tmp_path = tempfile.mkstemp()
                 with os.fdopen(fd, 'wb') as f:
                     f.write(file_bytes)
                 
-                # 呼叫官方套件，它會自動處理中文編碼與斜線，絕不報錯
                 res = supabase.storage.from_("project_files").upload(
-                    path=raw_path,
+                    path=f"{enc_folder}/{raw_path}",
                     file=tmp_path,
                     file_options={"content-type": uploaded_file.type}
                 )
@@ -668,21 +677,20 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"❌ 上傳失敗: {e}")
             finally:
-                # 任務結束，刪除硬碟上的暫存檔，保持乾淨
-                if os.path.exists(tmp_path):
+                if 'tmp_path' in locals() and os.path.exists(tmp_path):
                     os.remove(tmp_path)
 
 
 # ==========================================
-# 13. 專案檔案展示區 (官方套件相容讀取版)
+# 13. 專案檔案展示區 (Base64 自動解碼版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
 
-safe_folder = selected_project.replace("/", "_")
-
 try:
-    file_list = supabase.storage.from_("project_files").list(safe_folder)
+    # 💡 讀取檔案時，用編碼後的資料夾名稱去尋找
+    enc_folder = encode_b64(selected_project)
+    file_list = supabase.storage.from_("project_files").list(enc_folder)
     
     if not file_list or len(file_list) == 0 or (len(file_list) == 1 and file_list[0]['name'] == '.emptyFolderPlaceholder'):
         st.info("尚無上傳任何檔案。")
@@ -694,25 +702,25 @@ try:
                 continue
                 
             fname = f.get('name', '')
-            if not fname:
+            if not fname or fname == '.emptyFolderPlaceholder':
                 continue
             
             parts = fname.split("__")
             
             if len(parts) >= 3:
-                cat = parts[0]
-                actual_name = parts[-1] 
+                # 💡 從英數字解碼，變回漂亮的中文字！
+                cat = decode_b64(parts[0])
+                actual_name = decode_b64(parts[-1]) 
             else:
                 cat = "未分類檔案"
-                actual_name = fname
+                actual_name = decode_b64(fname)
                 
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            # 官方套件產生的檔案，直接將中文字資料夾與檔名編碼為安全網址即可
-            enc_folder = urllib.parse.quote(safe_folder)
-            enc_fname = urllib.parse.quote(fname)
-            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{enc_fname}"
+            # 下載網址：加上 ?download 參數，讓使用者下載時直接是原來的中文名稱
+            safe_fname = urllib.parse.quote(actual_name)
+            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{fname}?download={safe_fname}"
             
             categorized_files[cat].append({
                 "name": actual_name,
@@ -720,12 +728,15 @@ try:
                 "created_at": f.get("created_at", "")[:10] 
             })
         
-        tabs = st.tabs(list(categorized_files.keys()))
-        
-        for i, (cat, files) in enumerate(categorized_files.items()):
-            with tabs[i]:
-                for file_info in files:
-                    st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** 　*(上傳於: {file_info['created_at']})*")
+        if categorized_files:
+            tabs = st.tabs(list(categorized_files.keys()))
+            
+            for i, (cat, files) in enumerate(categorized_files.items()):
+                with tabs[i]:
+                    for file_info in files:
+                        st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})**  *(上傳於: {file_info['created_at']})*")
+        else:
+            st.info("資料夾中無有效檔案。")
 
 except Exception as e:
     st.info("尚無上傳任何檔案或找不到專案資料夾。")
