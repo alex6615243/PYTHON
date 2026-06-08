@@ -609,24 +609,39 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (Base64 終極無敵編碼版)
+# 12. 專案檔案上傳區 (智慧可讀前綴 + Base64 防護版)
 # ==========================================
 import os
 import tempfile
 import datetime
 import urllib.parse
 import base64
+import re
 
-# 💡 建立魔法函數：負責把中文變成純英數，以及把英數變回中文
-def encode_b64(text):
-    return base64.urlsafe_b64encode(text.encode('utf-8')).decode('utf-8').rstrip('=')
+# 💡 升級版魔法函數：提取英數字當作前綴，保留後台可讀性，並用 Base64 防護中文與符號！
+def encode_safe(text, is_file=False):
+    # 擷取英數與底線，讓後台人員可以肉眼辨識
+    prefix = re.sub(r'[^a-zA-Z0-9]', '_', text)
+    prefix = re.sub(r'_+', '_', prefix).strip('_')
+    if not prefix: prefix = "Item"
+    
+    b64_part = base64.urlsafe_b64encode(text.encode('utf-8')).decode('utf-8').rstrip('=')
+    
+    if is_file and "." in text:
+        ext = text.split(".")[-1]
+        return f"{prefix}__b64__{b64_part}.{ext}"
+    return f"{prefix}__b64__{b64_part}"
 
-def decode_b64(text):
-    pad = '=' * (4 - (len(text) % 4))
-    try:
-        return base64.urlsafe_b64decode((text + pad).encode('utf-8')).decode('utf-8')
-    except:
-        return text # 如果遇到非編碼的舊檔名，就保持原狀
+def decode_safe(safe_name):
+    if "__b64__" in safe_name:
+        core_part = safe_name.rsplit(".", 1)[0] if "." in safe_name else safe_name
+        b64_part = core_part.split("__b64__")[-1]
+        pad = '=' * (4 - (len(b64_part) % 4))
+        try:
+            return base64.urlsafe_b64decode((b64_part + pad).encode('utf-8')).decode('utf-8')
+        except:
+            pass
+    return safe_name
 
 st.divider()
 st.subheader("📎 專案雲端檔案庫")
@@ -652,15 +667,14 @@ if uploaded_file is not None:
                 file_bytes = uploaded_file.getvalue()
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 
-                # 💡 將所有含中文的部分，轉換為伺服器最喜歡的 Base64 純英數字！
-                enc_folder = encode_b64(selected_project)
-                enc_cat = encode_b64(final_category)
-                enc_name = encode_b64(uploaded_file.name)
+                # 自動產生「可讀前綴 + 安全碼」
+                enc_folder = encode_safe(selected_project)
+                enc_cat = encode_safe(final_category)
+                enc_name = encode_safe(uploaded_file.name, is_file=True)
                 
                 # 組合出 100% 符合伺服器資安規範的純英數路徑
-                raw_path = f"{enc_cat}__{timestamp}__{enc_name}"
+                raw_path = f"{enc_cat}__time__{timestamp}__{enc_name}"
                 
-                # 寫入實體暫存檔交給官方套件上傳，杜絕遺失
                 fd, tmp_path = tempfile.mkstemp()
                 with os.fdopen(fd, 'wb') as f:
                     f.write(file_bytes)
@@ -682,14 +696,14 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (Base64 自動解碼版)
+# 13. 專案檔案展示區 (前綴安全碼自動解碼版)
 # ==========================================
 st.divider()
 st.subheader(f"📂 【{selected_project}】檔案列表")
 
 try:
-    # 💡 讀取檔案時，用編碼後的資料夾名稱去尋找
-    enc_folder = encode_b64(selected_project)
+    # 用專案的安全名稱去尋找
+    enc_folder = encode_safe(selected_project)
     file_list = supabase.storage.from_("project_files").list(enc_folder)
     
     if not file_list or len(file_list) == 0 or (len(file_list) == 1 and file_list[0]['name'] == '.emptyFolderPlaceholder'):
@@ -705,22 +719,22 @@ try:
             if not fname or fname == '.emptyFolderPlaceholder':
                 continue
             
-            parts = fname.split("__")
+            # 拆解出分類、時間與真實檔名
+            parts = fname.split("__time__")
             
-            if len(parts) >= 3:
-                # 💡 從英數字解碼，變回漂亮的中文字！
-                cat = decode_b64(parts[0])
-                actual_name = decode_b64(parts[-1]) 
+            if len(parts) >= 2:
+                cat = decode_safe(parts[0])
+                time_and_name = parts[1].split("__", 1)
+                actual_name = decode_safe(time_and_name[1]) if len(time_and_name) > 1 else decode_safe(parts[1])
             else:
                 cat = "未分類檔案"
-                actual_name = decode_b64(fname)
+                actual_name = decode_safe(fname)
                 
             if cat not in categorized_files:
                 categorized_files[cat] = []
                 
-            # 下載網址：加上 ?download 參數，讓使用者下載時直接是原來的中文名稱
             safe_fname = urllib.parse.quote(actual_name)
-            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{fname}?download={safe_fname}"
+            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{urllib.parse.quote(fname)}?download={safe_fname}"
             
             categorized_files[cat].append({
                 "name": actual_name,
