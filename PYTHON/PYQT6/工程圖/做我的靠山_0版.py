@@ -770,87 +770,89 @@ if uploaded_files:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (前置勾選 + 唯一刪除鍵版)
+# 13. 專案檔案展示區 (靜音表單不重整版)
 # ==========================================
 st.divider()
-
-# 💡 預留一個空間給「唯一」的刪除按鈕，放在右上角
-col_title, col_batch_btn = st.columns([4, 1])
-with col_title:
-    st.subheader(f"📂 【{selected_project}】檔案列表")
-batch_btn_placeholder = col_batch_btn.empty() 
-
-# 建立一個清單來收集被勾選要刪除的檔案
-files_to_delete = []
 
 try:
     enc_folder = encode_safe(selected_project)
     file_list = supabase.storage.from_("project_files").list(enc_folder)
     
-    if not file_list or len(file_list) == 0 or (len(file_list) == 1 and file_list[0]['name'] == '.emptyFolderPlaceholder'):
-        st.info("尚無上傳任何檔案。")
-    else:
-        categorized_files = {}
+    # 💡 魔法 1：使用 st.form 將整個展示區包起來，進入「勾選不重整」的靜音模式
+    with st.form("file_manager_form"):
         
-        for f in file_list:
-            if not isinstance(f, dict): continue
-            fname = f.get('name', '')
-            if not fname or fname == '.emptyFolderPlaceholder': continue
-            
-            parts = fname.split("__time__")
-            if len(parts) >= 2:
-                cat = decode_safe(parts[0])
-                time_and_name = parts[1].split("__", 1)
-                actual_name = decode_safe(time_and_name[1]) if len(time_and_name) > 1 else decode_safe(parts[1])
-            else:
-                cat = "未分類檔案"
-                actual_name = decode_safe(fname)
-                
-            if cat not in categorized_files: categorized_files[cat] = []
-                
-            safe_fname = urllib.parse.quote(actual_name)
-            public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{urllib.parse.quote(fname)}?download={safe_fname}"
-            
-            categorized_files[cat].append({
-                "name": actual_name,
-                "url": public_url,
-                "created_at": f.get("created_at", "")[:10],
-                "raw_name": fname
-            })
+        # 💡 魔法 2：刪除按鈕固定寫在右上角，永遠存在
+        col_title, col_batch_btn = st.columns([4, 1])
+        with col_title:
+            st.subheader(f"📂 【{selected_project}】檔案列表")
+        with col_batch_btn:
+            # st.form_submit_button 是表單專用的提交按鈕
+            submitted = st.form_submit_button("🗑️ 刪除已選檔案", type="primary", disabled=is_proj_closed, use_container_width=True)
+
+        files_to_delete = []
         
-        if categorized_files:
-            tabs = st.tabs(list(categorized_files.keys()))
-            
-            for i, (cat, files) in enumerate(categorized_files.items()):
-                with tabs[i]:
-                    for file_info in files:
-                        # 💡 變更點 1：調整比例，核取方塊在最左側 (0.5)，檔名在右側 (9.5)
-                        col_chk, col_file = st.columns([0.5, 9.5])
-                        
-                        with col_chk:
-                            # 💡 變更點 2：加入 label_visibility="collapsed" 隱藏文字，只顯示乾淨的方格
-                            is_checked = st.checkbox("選取", key=f"chk_{file_info['raw_name']}", disabled=is_proj_closed, label_visibility="collapsed")
-                            if is_checked:
-                                files_to_delete.append(f"{enc_folder}/{file_info['raw_name']}")
-                                
-                        with col_file:
-                            st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})**  *(上傳於: {file_info['created_at']})*")
-                        
-                        # 💡 變更點 3：徹底移除了每個檔案旁邊的個別「單獨刪除」按鈕
+        if not file_list or len(file_list) == 0 or (len(file_list) == 1 and file_list[0]['name'] == '.emptyFolderPlaceholder'):
+            st.info("尚無上傳任何檔案。")
         else:
-            st.info("資料夾中無有效檔案。")
+            categorized_files = {}
+            
+            for f in file_list:
+                if not isinstance(f, dict): continue
+                fname = f.get('name', '')
+                if not fname or fname == '.emptyFolderPlaceholder': continue
+                
+                parts = fname.split("__time__")
+                if len(parts) >= 2:
+                    cat = decode_safe(parts[0])
+                    time_and_name = parts[1].split("__", 1)
+                    actual_name = decode_safe(time_and_name[1]) if len(time_and_name) > 1 else decode_safe(parts[1])
+                else:
+                    cat = "未分類檔案"
+                    actual_name = decode_safe(fname)
+                    
+                if cat not in categorized_files: categorized_files[cat] = []
+                    
+                safe_fname = urllib.parse.quote(actual_name)
+                public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{urllib.parse.quote(fname)}?download={safe_fname}"
+                
+                categorized_files[cat].append({
+                    "name": actual_name,
+                    "url": public_url,
+                    "created_at": f.get("created_at", "")[:10],
+                    "raw_name": fname
+                })
+            
+            if categorized_files:
+                tabs = st.tabs(list(categorized_files.keys()))
+                
+                for i, (cat, files) in enumerate(categorized_files.items()):
+                    with tabs[i]:
+                        for file_info in files:
+                            col_chk, col_file = st.columns([0.5, 9.5])
+                            
+                            with col_chk:
+                                is_checked = st.checkbox("選取", key=f"chk_{file_info['raw_name']}", disabled=is_proj_closed, label_visibility="collapsed")
+                                if is_checked:
+                                    files_to_delete.append(f"{enc_folder}/{file_info['raw_name']}")
+                                    
+                            with col_file:
+                                st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})**  *(上傳於: {file_info['created_at']})*")
+            else:
+                st.info("資料夾中無有效檔案。")
+
+        # 💡 當按下右上角的刪除按鈕時，才會進行判斷與後台連動
+        if submitted:
+            if files_to_delete:
+                with st.spinner(f"正在刪除 {len(files_to_delete)} 個檔案..."):
+                    try:
+                        supabase.storage.from_("project_files").remove(files_to_delete)
+                        st.toast(f"✅ 成功刪除 {len(files_to_delete)} 個檔案！")
+                        st.rerun() # 刪除完畢後，重新整理整個網頁更新列表
+                    except Exception as e:
+                        st.error(f"❌ 刪除失敗: {e}")
+            else:
+                # 💡 防呆機制：如果什麼都沒勾就按刪除，跳出提醒
+                st.warning("⚠️ 請先在下方勾選要刪除的檔案！")
 
 except Exception as e:
     st.info("尚無上傳任何檔案或找不到專案資料夾。")
-
-# 💡 變更點 4：只在右上角顯示唯一的刪除按鈕
-if files_to_delete:
-    with batch_btn_placeholder:
-        if st.button(f"刪除已選檔案 ({len(files_to_delete)})", type="primary", disabled=is_proj_closed, use_container_width=True):
-            with st.spinner(f"正在刪除 {len(files_to_delete)} 個檔案..."):
-                try:
-                    supabase.storage.from_("project_files").remove(files_to_delete)
-                    st.toast(f"✅ 成功刪除 {len(files_to_delete)} 個檔案！")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ 刪除失敗: {e}")
