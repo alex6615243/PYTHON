@@ -11,7 +11,7 @@ import tempfile
 import os
 import requests
 import urllib.parse
-import re
+
 
 # ==========================================
 # 0. 頁面基本設定 (⚠️ 必須在第一行)
@@ -672,6 +672,8 @@ components.html(
 # ==========================================
 # 12. 專案檔案上傳區 (純手動輸入分類版)
 # ==========================================
+import base64
+import re
 def encode_safe(text, is_file=False):
     prefix = re.sub(r'[^a-zA-Z0-9]', '_', text)
     prefix = re.sub(r'_+', '_', prefix).strip('_')
