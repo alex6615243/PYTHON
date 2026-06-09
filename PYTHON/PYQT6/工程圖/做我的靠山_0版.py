@@ -149,7 +149,9 @@ with col_btn:
                 st.session_state.is_closed = False
                 st.session_state.closed_date = None
                 st.rerun()
-            except Exception as e: st.error("操作失敗")
+            except Exception as e: 
+                # 💡 顯示真實錯誤
+                st.error(f"❌ 操作失敗: {e}")
         st.caption(f"於 {st.session_state.closed_date} 結案")
     else:
         if st.button("📦 專案結案", type="primary", use_container_width=True):
@@ -161,7 +163,8 @@ with col_btn:
                 st.balloons() # 結案放氣球慶祝！
                 st.rerun()
             except Exception as e:
-                st.error("請確認 Supabase projects 表格已新增 is_closed 欄位")
+                # 💡 核心修改：把原本寫死的提示，改成把 Supabase 底層的真實錯誤印出來！
+                st.error(f"❌ 結案失敗，真實錯誤為：{e}")
 
 st.markdown("---")
 
