@@ -724,7 +724,7 @@ if uploaded_files:
     # 💡 魔法 2：排版加入「一鍵清除」按鈕
     col_info, col_clear = st.columns([3, 1])
     with col_clear:
-        if st.button("清除已選檔案", use_container_width=True):
+        if st.button("清除檔案", use_container_width=True):
             st.session_state.uploader_key += 1 # 改變鑰匙，觸發重置
             st.rerun()
             
