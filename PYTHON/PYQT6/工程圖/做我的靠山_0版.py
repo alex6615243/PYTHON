@@ -784,10 +784,10 @@ try:
         # 💡 魔法 2：刪除按鈕固定寫在右上角，永遠存在
         col_title, col_batch_btn = st.columns([4, 1])
         with col_title:
-            st.subheader(f"📂 【{selected_project}】檔案列表")
+            st.subheader(f"【{selected_project}】檔案列表")
         with col_batch_btn:
             # st.form_submit_button 是表單專用的提交按鈕
-            submitted = st.form_submit_button("🗑️ 刪除已選檔案", type="primary", disabled=is_proj_closed, use_container_width=True)
+            submitted = st.form_submit_button("刪除已選檔案", type="primary", disabled=is_proj_closed, use_container_width=True)
 
         files_to_delete = []
         
