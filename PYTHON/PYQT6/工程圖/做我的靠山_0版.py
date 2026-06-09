@@ -670,10 +670,14 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (純手動輸入分類版)
+# 12. 專案檔案上傳區 (支援多檔案批次上傳)
 # ==========================================
 import base64
 import re
+import tempfile
+import os
+import datetime
+
 def encode_safe(text, is_file=False):
     prefix = re.sub(r'[^a-zA-Z0-9]', '_', text)
     prefix = re.sub(r'_+', '_', prefix).strip('_')
@@ -700,47 +704,59 @@ st.subheader("工程資料夾")
 
 c_cat, c_up = st.columns([1, 2])
 with c_cat:
-    # 💡 變更點：移除下拉選單，改為純文字輸入框，並保留結案上鎖機制
     custom_category = st.text_input("輸入檔案分類：", placeholder="例如：設計圖、試車報告...", disabled=is_proj_closed)
-    
-    # 如果使用者沒輸入任何文字就選檔案，系統會自動歸類到「未分類」
     final_category = custom_category.strip() if custom_category.strip() else "未分類"
 
 with c_up:
-    uploaded_file = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：", disabled=is_proj_closed)
+    # 💡 魔法參數：accept_multiple_files=True，現在可以框選或拖曳多個檔案了！
+    uploaded_files = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：", disabled=is_proj_closed, accept_multiple_files=True)
 
-if uploaded_file is not None:
-    st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
-    if st.button("確認上傳至雲端空間", use_container_width=True, disabled=is_proj_closed):
-        with st.spinner("檔案飛往雲端中..."):
-            try:
-                file_bytes = uploaded_file.getvalue()
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                enc_folder = encode_safe(selected_project)
-                enc_cat = encode_safe(final_category)
-                enc_name = encode_safe(uploaded_file.name, is_file=True)
-                
-                raw_path = f"{enc_cat}__time__{timestamp}__{enc_name}"
-                
-                fd, tmp_path = tempfile.mkstemp()
-                with os.fdopen(fd, 'wb') as f:
-                    f.write(file_bytes)
-                
-                res = supabase.storage.from_("project_files").upload(
-                    path=f"{enc_folder}/{raw_path}",
-                    file=tmp_path,
-                    file_options={"content-type": uploaded_file.type}
-                )
-                
-                st.success(f"✅ 檔案上傳成功！")
+# 因為現在是「多檔案」(List)，所以判斷式改成 if uploaded_files:
+if uploaded_files:
+    # 計算總檔案數量與大小
+    total_size = sum([f.size for f in uploaded_files]) / 1024
+    st.info(f"📂 準備批次上傳：共 {len(uploaded_files)} 個檔案 (總大小 {total_size:.1f} KB)")
+    
+    if st.button("🚀 確認批次上傳至雲端", use_container_width=True, disabled=is_proj_closed):
+        with st.spinner("多檔案批次飛往雲端中..."):
+            success_count = 0
+            
+            # 💡 建立迴圈：將清單中的檔案一個個送上雲端
+            for file in uploaded_files:
+                try:
+                    file_bytes = file.getvalue()
+                    # 每次抓取當下時間，確保即使檔名相同也能區分
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19] 
+                    
+                    enc_folder = encode_safe(selected_project)
+                    enc_cat = encode_safe(final_category)
+                    enc_name = encode_safe(file.name, is_file=True)
+                    
+                    raw_path = f"{enc_cat}__time__{timestamp}__{enc_name}"
+                    
+                    fd, tmp_path = tempfile.mkstemp()
+                    with os.fdopen(fd, 'wb') as f:
+                        f.write(file_bytes)
+                    
+                    res = supabase.storage.from_("project_files").upload(
+                        path=f"{enc_folder}/{raw_path}",
+                        file=tmp_path,
+                        file_options={"content-type": file.type}
+                    )
+                    success_count += 1
+                    
+                except Exception as e:
+                    # 如果單一檔案失敗，顯示錯誤但不會中斷其他檔案的上傳
+                    st.error(f"❌ 【{file.name}】上傳失敗: {e}")
+                finally:
+                    if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+            
+            # 如果至少有一個檔案成功，就發送氣球慶祝並重整畫面
+            if success_count > 0:
+                st.success(f"✅ 成功上傳 {success_count} 個檔案！")
                 st.balloons()
-                st.rerun() 
-            except Exception as e:
-                st.error(f"❌ 上傳失敗: {e}")
-            finally:
-                if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                st.rerun()
 # ==========================================
 # 13. 專案檔案展示區 (前綴安全碼自動解碼版)
 # ==========================================
