@@ -670,24 +670,13 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (智慧可讀前綴 + Base64 防護版)
+# 12. 專案檔案上傳區 (純手動輸入分類版)
 # ==========================================
-import os
-import tempfile
-import datetime
-import urllib.parse
-import base64
-import re
-
-# 💡 升級版魔法函數：提取英數字當作前綴，保留後台可讀性，並用 Base64 防護中文與符號！
 def encode_safe(text, is_file=False):
-    # 擷取英數與底線，讓後台人員可以肉眼辨識
     prefix = re.sub(r'[^a-zA-Z0-9]', '_', text)
     prefix = re.sub(r'_+', '_', prefix).strip('_')
     if not prefix: prefix = "Item"
-    
     b64_part = base64.urlsafe_b64encode(text.encode('utf-8')).decode('utf-8').rstrip('=')
-    
     if is_file and "." in text:
         ext = text.split(".")[-1]
         return f"{prefix}__b64__{b64_part}.{ext}"
@@ -705,35 +694,31 @@ def decode_safe(safe_name):
     return safe_name
 
 st.divider()
-st.subheader("📎 專案雲端檔案庫")
+st.subheader("工程資料夾")
 
 c_cat, c_up = st.columns([1, 2])
 with c_cat:
-    file_category = st.selectbox("選擇檔案分類：", ["施工照片", "設計圖", "會議記錄", "報告書", "自訂分類..."], disabled=is_proj_closed)
-    if file_category == "自訂分類...":
-        custom_category = st.text_input("請輸入自訂分類名稱：", placeholder="例如：變更設計單")
-        final_category = custom_category if custom_category else "未分類"
-    else:
-        final_category = file_category
+    # 💡 變更點：移除下拉選單，改為純文字輸入框，並保留結案上鎖機制
+    custom_category = st.text_input("輸入檔案分類：", placeholder="例如：設計圖、試車報告...", disabled=is_proj_closed)
+    
+    # 如果使用者沒輸入任何文字就選檔案，系統會自動歸類到「未分類」
+    final_category = custom_category.strip() if custom_category.strip() else "未分類"
 
 with c_up:
     uploaded_file = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：", disabled=is_proj_closed)
 
 if uploaded_file is not None:
     st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
-    
-    if st.button("🚀 確認上傳至雲端空間", use_container_width=True, disabled=is_proj_closed):
+    if st.button("確認上傳至雲端空間", use_container_width=True, disabled=is_proj_closed):
         with st.spinner("檔案飛往雲端中..."):
             try:
                 file_bytes = uploaded_file.getvalue()
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 
-                # 自動產生「可讀前綴 + 安全碼」
                 enc_folder = encode_safe(selected_project)
                 enc_cat = encode_safe(final_category)
                 enc_name = encode_safe(uploaded_file.name, is_file=True)
                 
-                # 組合出 100% 符合伺服器資安規範的純英數路徑
                 raw_path = f"{enc_cat}__time__{timestamp}__{enc_name}"
                 
                 fd, tmp_path = tempfile.mkstemp()
@@ -754,13 +739,11 @@ if uploaded_file is not None:
             finally:
                 if 'tmp_path' in locals() and os.path.exists(tmp_path):
                     os.remove(tmp_path)
-
-
 # ==========================================
 # 13. 專案檔案展示區 (前綴安全碼自動解碼版)
 # ==========================================
 st.divider()
-st.subheader(f"📂 【{selected_project}】檔案列表")
+st.subheader(f"【{selected_project}】檔案列表")
 
 try:
     # 用專案的安全名稱去尋找
