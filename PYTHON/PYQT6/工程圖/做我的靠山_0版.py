@@ -94,19 +94,30 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
             
     st.divider()
     del_p = st.selectbox("選擇要刪除的專案", st.session_state.projects)
+    
+    # 💡 魔法：建立一個專屬的刪除確認彈窗
+    @st.dialog("⚠️ 確定要刪除專案嗎？")
+    def confirm_delete(project_name):
+        st.error(f"即將徹底刪除【{project_name}】！\n\n包含所有任務資料、進度、日誌與上傳的檔案都將被清空。")
+        st.warning("此動作無法復原，請確認您已備份所需資料。")
+        if st.button("🚨 我確定要徹底刪除", type="primary", use_container_width=True):
+            try:
+                supabase.table("tasks").delete().eq("project_name", project_name).execute()
+                supabase.table("commissioning_tasks").delete().eq("project_name", project_name).execute()
+                supabase.table("regions").delete().eq("project_name", project_name).execute()
+                supabase.table("subcontractors").delete().eq("project_name", project_name).execute()
+                supabase.table("projects").delete().eq("name", project_name).execute()
+                
+                st.session_state.projects.remove(project_name)
+                st.success("✅ 專案已徹底刪除")
+                st.rerun()
+            except Exception as e: 
+                st.error(f"刪除失敗: {e}")
+
+    # 💡 側邊欄的按鈕現在只負責「呼叫彈窗」，不直接刪除資料
     if st.button("刪除專案", type="primary", use_container_width=True):
         if len(st.session_state.projects) > 1:
-            try:
-                supabase.table("tasks").delete().eq("project_name", del_p).execute()
-                supabase.table("commissioning_tasks").delete().eq("project_name", del_p).execute()
-                supabase.table("regions").delete().eq("project_name", del_p).execute()
-                supabase.table("subcontractors").delete().eq("project_name", del_p).execute()
-                supabase.table("projects").delete().eq("name", del_p).execute()
-                
-                st.session_state.projects.remove(del_p)
-                st.toast(f"已徹底刪除 {del_p}")
-                st.rerun()
-            except Exception as e: st.error(f"刪除失敗: {e}")
+            confirm_delete(del_p) # 呼叫上方的彈窗函數
         else:
             st.error("必須保留至少一個專案！")
 
