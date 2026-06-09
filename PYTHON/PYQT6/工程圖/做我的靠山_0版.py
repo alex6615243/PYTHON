@@ -267,7 +267,7 @@ with st.expander("施工任務管理", expanded=True):
         ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
         # 💡 表單專用儲存按鈕：按下後才會一次性送出 ed_plan 與 ed_act 的所有變更
-        btn_save_t = st.form_submit_button("儲存並同步", type="primary", use_container_width=True, disabled=is_proj_closed)
+        btn_save_t = st.form_submit_button("儲存並同步", type="primary", disabled=is_proj_closed)
             
         if btn_save_t:
             with st.spinner("資料同步中..."):
@@ -352,7 +352,7 @@ with st.expander("試車任務管理", expanded=True):
         ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
         # 💡 表單專用儲存按鈕
-        btn_save_c = st.form_submit_button("儲存並同步", type="primary", use_container_width=True, disabled=is_proj_closed)
+        btn_save_c = st.form_submit_button("儲存並同步", type="primary", disabled=is_proj_closed)
 
         if btn_save_c:
             with st.spinner("資料同步中..."):
