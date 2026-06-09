@@ -670,7 +670,7 @@ components.html(
     width=0,
 )
 # ==========================================
-# 12. 專案檔案上傳區 (支援多檔案批次上傳)
+# 12. 專案檔案上傳區 (支援一鍵清除與多檔案)
 # ==========================================
 import base64
 import re
@@ -702,31 +702,43 @@ def decode_safe(safe_name):
 st.divider()
 st.subheader("工程資料夾")
 
+# 💡 魔法 1：初始化一個用來重置 Uploader 的 Key
+if 'uploader_key' not in st.session_state:
+    st.session_state.uploader_key = 0
+
 c_cat, c_up = st.columns([1, 2])
 with c_cat:
     custom_category = st.text_input("輸入檔案分類：", placeholder="例如：設計圖、試車報告...", disabled=is_proj_closed)
     final_category = custom_category.strip() if custom_category.strip() else "未分類"
 
 with c_up:
-    # 💡 魔法參數：accept_multiple_files=True，現在可以框選或拖曳多個檔案了！
-    uploaded_files = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：", disabled=is_proj_closed, accept_multiple_files=True)
+    # 💡 綁定動態 Key，只要 Key 改變，這個區塊就會強制清空重置！
+    uploaded_files = st.file_uploader(
+        f"上傳【{selected_project} - {final_category}】的檔案：", 
+        disabled=is_proj_closed, 
+        accept_multiple_files=True,
+        key=f"uploader_{st.session_state.uploader_key}" 
+    )
 
-# 因為現在是「多檔案」(List)，所以判斷式改成 if uploaded_files:
 if uploaded_files:
-    # 計算總檔案數量與大小
-    total_size = sum([f.size for f in uploaded_files]) / 1024
-    st.info(f"📂 準備上傳：共 {len(uploaded_files)} 個檔案 (總大小 {total_size:.1f} KB)")
-    
-    if st.button("確認上傳", use_container_width=True, disabled=is_proj_closed):
-        with st.spinner("上傳中..."):
-            success_count = 0
+    # 💡 魔法 2：排版加入「一鍵清除」按鈕
+    col_info, col_clear = st.columns([3, 1])
+    with col_clear:
+        if st.button("清除已選檔案", use_container_width=True):
+            st.session_state.uploader_key += 1 # 改變鑰匙，觸發重置
+            st.rerun()
             
-            # 💡 建立迴圈：將清單中的檔案一個個送上雲端
+    with col_info:
+        total_size = sum([f.size for f in uploaded_files]) / 1024
+        st.info(f"準備上傳：共 {len(uploaded_files)} 個檔案 (總大小 {total_size:.1f} KB)")
+    
+    if st.button("確認上傳", type="primary", use_container_width=True, disabled=is_proj_closed):
+        with st.spinner("檔案上傳中..."):
+            success_count = 0
             for file in uploaded_files:
                 try:
                     file_bytes = file.getvalue()
-                    # 每次抓取當下時間，確保即使檔名相同也能區分
-                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19] 
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
                     
                     enc_folder = encode_safe(selected_project)
                     enc_cat = encode_safe(final_category)
@@ -744,24 +756,32 @@ if uploaded_files:
                         file_options={"content-type": file.type}
                     )
                     success_count += 1
-                    
                 except Exception as e:
-                    # 如果單一檔案失敗，顯示錯誤但不會中斷其他檔案的上傳
                     st.error(f"❌ 【{file.name}】上傳失敗: {e}")
                 finally:
                     if 'tmp_path' in locals() and os.path.exists(tmp_path):
                         os.remove(tmp_path)
             
-            # 如果至少有一個檔案成功，就發送氣球慶祝並重整畫面
             if success_count > 0:
                 st.success(f"✅ 成功上傳 {success_count} 個檔案！")
+                st.session_state.uploader_key += 1 # 上傳成功後自動清空上傳區
                 st.balloons()
-                st.rerun()
+                st.rerun() 
+
+
 # ==========================================
-# 13. 專案檔案展示區 (支援一鍵刪除版)
+# 13. 專案檔案展示區 (支援批次選取與刪除)
 # ==========================================
 st.divider()
-st.subheader(f"【{selected_project}】檔案列表")
+
+# 💡 魔法 3：預留一個空間給「批次刪除按鈕」(因為要等下面算完選了幾個，按鈕才會出現在最上面)
+col_title, col_batch_btn = st.columns([4, 1])
+with col_title:
+    st.subheader(f"📂 【{selected_project}】檔案列表")
+batch_btn_placeholder = col_batch_btn.empty() 
+
+# 建立一個清單來收集被勾選要刪除的檔案
+files_to_delete = []
 
 try:
     enc_folder = encode_safe(selected_project)
@@ -773,15 +793,11 @@ try:
         categorized_files = {}
         
         for f in file_list:
-            if not isinstance(f, dict):
-                continue
-                
+            if not isinstance(f, dict): continue
             fname = f.get('name', '')
-            if not fname or fname == '.emptyFolderPlaceholder':
-                continue
+            if not fname or fname == '.emptyFolderPlaceholder': continue
             
             parts = fname.split("__time__")
-            
             if len(parts) >= 2:
                 cat = decode_safe(parts[0])
                 time_and_name = parts[1].split("__", 1)
@@ -790,8 +806,7 @@ try:
                 cat = "未分類檔案"
                 actual_name = decode_safe(fname)
                 
-            if cat not in categorized_files:
-                categorized_files[cat] = []
+            if cat not in categorized_files: categorized_files[cat] = []
                 
             safe_fname = urllib.parse.quote(actual_name)
             public_url = f"{st.secrets['SUPABASE_URL'].rstrip('/')}/storage/v1/object/public/project_files/{enc_folder}/{urllib.parse.quote(fname)}?download={safe_fname}"
@@ -800,7 +815,7 @@ try:
                 "name": actual_name,
                 "url": public_url,
                 "created_at": f.get("created_at", "")[:10],
-                "raw_name": fname # 💡 偷偷把雲端最原始的編碼檔名記錄下來，用來當作刪除的目標
+                "raw_name": fname
             })
         
         if categorized_files:
@@ -809,23 +824,27 @@ try:
             for i, (cat, files) in enumerate(categorized_files.items()):
                 with tabs[i]:
                     for file_info in files:
-                        # 💡 變更點：使用 columns 排版，讓檔案名稱在左邊，刪除按鈕在右邊
-                        col_file, col_del = st.columns([5, 1])
+                        # 💡 變更點：加入 Checkbox 核取方塊
+                        col_file, col_chk, col_del = st.columns([5, 1, 1])
                         
                         with col_file:
                             st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** *(上傳於: {file_info['created_at']})*")
                             
+                        with col_chk:
+                            # 如果打勾了，就把檔案路徑塞進「待刪除清單」
+                            is_checked = st.checkbox("選取", key=f"chk_{file_info['raw_name']}", disabled=is_proj_closed)
+                            if is_checked:
+                                files_to_delete.append(f"{enc_folder}/{file_info['raw_name']}")
+                                
                         with col_del:
-                            # 💡 刪除按鈕：綁定 is_proj_closed (結案就不能刪除)，並為每個按鈕產生獨立的 key
-                            if st.button("🗑️ 刪除", key=f"del_{file_info['raw_name']}", disabled=is_proj_closed, use_container_width=True):
+                            # 保留單獨刪除功能以備不時之需
+                            if st.button("單獨刪除", key=f"del_{file_info['raw_name']}", disabled=is_proj_closed, use_container_width=True):
                                 with st.spinner("刪除中..."):
                                     try:
-                                        # 呼叫 Supabase 的刪除 API (需傳入陣列格式的路徑)
                                         target_path = f"{enc_folder}/{file_info['raw_name']}"
                                         supabase.storage.from_("project_files").remove([target_path])
-                                        
                                         st.toast(f"✅ 已成功刪除：{file_info['name']}")
-                                        st.rerun() # 刪除後立即重新整理畫面
+                                        st.rerun() 
                                     except Exception as e:
                                         st.error(f"❌ 刪除失敗: {e}")
         else:
@@ -833,3 +852,16 @@ try:
 
 except Exception as e:
     st.info("尚無上傳任何檔案或找不到專案資料夾。")
+
+# 💡 魔法 4：如果「待刪除清單」裡面有東西，就在標題旁邊變出紅色的批次刪除按鈕！
+if files_to_delete:
+    with batch_btn_placeholder:
+        if st.button(f"🚨 批次刪除 ({len(files_to_delete)})", type="primary", disabled=is_proj_closed, use_container_width=True):
+            with st.spinner(f"正在刪除 {len(files_to_delete)} 個檔案..."):
+                try:
+                    # Supabase 的 remove 原生就支援一次吃一堆陣列路徑！
+                    supabase.storage.from_("project_files").remove(files_to_delete)
+                    st.toast(f"✅ 成功批次刪除 {len(files_to_delete)} 個檔案！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 批次刪除失敗: {e}")
