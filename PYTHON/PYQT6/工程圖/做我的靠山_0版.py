@@ -758,13 +758,12 @@ if uploaded_files:
                 st.balloons()
                 st.rerun()
 # ==========================================
-# 13. 專案檔案展示區 (前綴安全碼自動解碼版)
+# 13. 專案檔案展示區 (支援一鍵刪除版)
 # ==========================================
 st.divider()
 st.subheader(f"【{selected_project}】檔案列表")
 
 try:
-    # 用專案的安全名稱去尋找
     enc_folder = encode_safe(selected_project)
     file_list = supabase.storage.from_("project_files").list(enc_folder)
     
@@ -781,7 +780,6 @@ try:
             if not fname or fname == '.emptyFolderPlaceholder':
                 continue
             
-            # 拆解出分類、時間與真實檔名
             parts = fname.split("__time__")
             
             if len(parts) >= 2:
@@ -801,7 +799,8 @@ try:
             categorized_files[cat].append({
                 "name": actual_name,
                 "url": public_url,
-                "created_at": f.get("created_at", "")[:10] 
+                "created_at": f.get("created_at", "")[:10],
+                "raw_name": fname # 💡 偷偷把雲端最原始的編碼檔名記錄下來，用來當作刪除的目標
             })
         
         if categorized_files:
@@ -810,7 +809,25 @@ try:
             for i, (cat, files) in enumerate(categorized_files.items()):
                 with tabs[i]:
                     for file_info in files:
-                        st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})**  *(上傳於: {file_info['created_at']})*")
+                        # 💡 變更點：使用 columns 排版，讓檔案名稱在左邊，刪除按鈕在右邊
+                        col_file, col_del = st.columns([5, 1])
+                        
+                        with col_file:
+                            st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** *(上傳於: {file_info['created_at']})*")
+                            
+                        with col_del:
+                            # 💡 刪除按鈕：綁定 is_proj_closed (結案就不能刪除)，並為每個按鈕產生獨立的 key
+                            if st.button("🗑️ 刪除", key=f"del_{file_info['raw_name']}", disabled=is_proj_closed, use_container_width=True):
+                                with st.spinner("刪除中..."):
+                                    try:
+                                        # 呼叫 Supabase 的刪除 API (需傳入陣列格式的路徑)
+                                        target_path = f"{enc_folder}/{file_info['raw_name']}"
+                                        supabase.storage.from_("project_files").remove([target_path])
+                                        
+                                        st.toast(f"✅ 已成功刪除：{file_info['name']}")
+                                        st.rerun() # 刪除後立即重新整理畫面
+                                    except Exception as e:
+                                        st.error(f"❌ 刪除失敗: {e}")
         else:
             st.info("資料夾中無有效檔案。")
 
