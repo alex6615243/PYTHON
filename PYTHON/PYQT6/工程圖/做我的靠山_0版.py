@@ -110,8 +110,10 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
         else:
             st.error("必須保留至少一個專案！")
 
-st.title(f"🛠️ {selected_project} ")
-st.markdown("---")
+# ==========================================
+# 3. 專案切換與動態資料載入 (加入結案狀態判斷)
+# ==========================================
+col_title, col_btn = st.columns([5, 1])
 
 if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
     st.session_state.current_project = selected_project
@@ -119,6 +121,49 @@ if 'current_project' not in st.session_state or st.session_state.current_project
     st.session_state.comm_tasks = load_data("commissioning_tasks", selected_project)
     st.session_state.regions = load_list("regions", selected_project)
     st.session_state.subcontractors = load_list("subcontractors", selected_project)
+    
+    # 💡 讀取專案結案狀態 (若無欄位則預設為未結案)
+    try:
+        p_res = supabase.table("projects").select("is_closed, closed_date").eq("name", selected_project).execute()
+        if p_res.data:
+            st.session_state.is_closed = p_res.data[0].get('is_closed', False)
+            st.session_state.closed_date = p_res.data[0].get('closed_date', None)
+        else:
+            st.session_state.is_closed = False
+            st.session_state.closed_date = None
+    except Exception:
+        st.session_state.is_closed = False
+        st.session_state.closed_date = None
+
+with col_title:
+    # 💡 結案後，標題的符號會變成鎖頭
+    title_icon = "🔒" if st.session_state.get('is_closed', False) else "🛠️"
+    st.title(f"{title_icon} {selected_project} ")
+
+with col_btn:
+    st.write("") # 排版對齊用
+    if st.session_state.get('is_closed', False):
+        if st.button("🔓 解除結案", use_container_width=True):
+            try:
+                supabase.table("projects").update({"is_closed": False, "closed_date": None}).eq("name", selected_project).execute()
+                st.session_state.is_closed = False
+                st.session_state.closed_date = None
+                st.rerun()
+            except Exception as e: st.error("操作失敗")
+        st.caption(f"於 {st.session_state.closed_date} 結案")
+    else:
+        if st.button("📦 專案結案", type="primary", use_container_width=True):
+            try:
+                today_str = datetime.date.today().isoformat()
+                supabase.table("projects").update({"is_closed": True, "closed_date": today_str}).eq("name", selected_project).execute()
+                st.session_state.is_closed = True
+                st.session_state.closed_date = today_str
+                st.balloons() # 結案放氣球慶祝！
+                st.rerun()
+            except Exception as e:
+                st.error("請確認 Supabase projects 表格已新增 is_closed 欄位")
+
+st.markdown("---")
 
 # ==========================================
 # 4. 區域與廠商管理 (側邊欄) - 隔離版
@@ -413,9 +458,17 @@ def draw_gantt(df, title, color_col):
                 name=leg_name, legendgroup=leg_name, showlegend=show_leg, hovertemplate=hover_text
             ))
 
-    today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
-    fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
-    fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
+   # 💡 判斷是否已經結案，如果結案了就凍結時間線
+    is_closed = st.session_state.get('is_closed', False)
+    
+    if is_closed and st.session_state.get('closed_date'):
+        closed_ts = pd.to_datetime(st.session_state.closed_date)
+        fig.add_vline(x=closed_ts, line_width=2, line_dash="dash", line_color="gray", layer="above")
+        fig.add_annotation(x=closed_ts, y=1, yref="paper", yanchor="bottom", text="結案日", showarrow=False, font=dict(color="gray", size=14))
+    else:
+        today = pd.Timestamp.now(tz='Asia/Taipei').normalize()
+        fig.add_vline(x=today, line_width=2, line_dash="dash", line_color="red", layer="above")
+        fig.add_annotation(x=today, y=1, yref="paper", yanchor="bottom", text="今日", showarrow=False, font=dict(color="red", size=14))
 
     fig.update_yaxes(categoryorder='array', categoryarray=p_df[task_col].tolist(), autorange="reversed", showgrid=True, gridcolor='black', tickfont=dict(color="black", size=14))
     
