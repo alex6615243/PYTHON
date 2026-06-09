@@ -715,10 +715,10 @@ with c_up:
 if uploaded_files:
     # 計算總檔案數量與大小
     total_size = sum([f.size for f in uploaded_files]) / 1024
-    st.info(f"📂 準備批次上傳：共 {len(uploaded_files)} 個檔案 (總大小 {total_size:.1f} KB)")
+    st.info(f"📂 準備上傳：共 {len(uploaded_files)} 個檔案 (總大小 {total_size:.1f} KB)")
     
-    if st.button("🚀 確認批次上傳至雲端", use_container_width=True, disabled=is_proj_closed):
-        with st.spinner("多檔案批次飛往雲端中..."):
+    if st.button("確認上傳", use_container_width=True, disabled=is_proj_closed):
+        with st.spinner("上傳中..."):
             success_count = 0
             
             # 💡 建立迴圈：將清單中的檔案一個個送上雲端
