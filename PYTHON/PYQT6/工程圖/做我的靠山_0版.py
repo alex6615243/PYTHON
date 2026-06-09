@@ -154,7 +154,7 @@ with col_btn:
                 st.error(f"❌ 操作失敗: {e}")
         st.caption(f"於 {st.session_state.closed_date} 結案")
     else:
-        if st.button("📦 專案結案", type="primary", use_container_width=True):
+        if st.button("結案", type="primary", use_container_width=True):
             try:
                 today_str = datetime.date.today().isoformat()
                 supabase.table("projects").update({"is_closed": True, "closed_date": today_str}).eq("name", selected_project).execute()
