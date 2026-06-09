@@ -838,7 +838,7 @@ try:
                                 
                         with col_del:
                             # 保留單獨刪除功能以備不時之需
-                            if st.button("單獨刪除", key=f"del_{file_info['raw_name']}", disabled=is_proj_closed, use_container_width=True):
+                            if st.button("刪除", key=f"del_{file_info['raw_name']}", disabled=is_proj_closed, use_container_width=True):
                                 with st.spinner("刪除中..."):
                                     try:
                                         target_path = f"{enc_folder}/{file_info['raw_name']}"
@@ -856,12 +856,12 @@ except Exception as e:
 # 💡 魔法 4：如果「待刪除清單」裡面有東西，就在標題旁邊變出紅色的批次刪除按鈕！
 if files_to_delete:
     with batch_btn_placeholder:
-        if st.button(f"🚨 批次刪除 ({len(files_to_delete)})", type="primary", disabled=is_proj_closed, use_container_width=True):
+        if st.button(f"批次刪除 ({len(files_to_delete)})", type="primary", disabled=is_proj_closed, use_container_width=True):
             with st.spinner(f"正在刪除 {len(files_to_delete)} 個檔案..."):
                 try:
                     # Supabase 的 remove 原生就支援一次吃一堆陣列路徑！
                     supabase.storage.from_("project_files").remove(files_to_delete)
-                    st.toast(f"✅ 成功批次刪除 {len(files_to_delete)} 個檔案！")
+                    st.toast(f"✅ 成功刪除 {len(files_to_delete)} 個檔案！")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ 批次刪除失敗: {e}")
+                    st.error(f"❌ 刪除失敗: {e}")
