@@ -234,7 +234,7 @@ with st.expander("施工任務管理", expanded=True):
         "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
         "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
     }
-    ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True,disabled=is_proj_closed)
+    ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
 
     st.subheader("2. 實際進度回報")
     col_cfg_act = {
@@ -244,31 +244,32 @@ with st.expander("施工任務管理", expanded=True):
         "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
     }
 
-    # 💡 終極修復版：使用 pandas 的 join 自動對齊 Index！
-    act_sync = ed_plan[['施工項目']].copy()
+    # 💡 終極修復版：抓取「區域+項目+廠商」作為辨識特徵
+    act_sync = ed_plan[['區域', '施工項目', '施工廠商']].copy()
 
     if not st.session_state.tasks.empty:
-        # 使用 left join，確保實際進度資料死死綁定在原有的行數上，不管怎麼刪都不會錯位
-        act_sync = act_sync.join(st.session_state.tasks[['實際開始', '實際完成', '完成度(%)']])
+        # 使用 merge 進行「特徵綁定」，徹底免疫行數錯位的問題！
+        mapping_keys = ['區域', '施工項目', '施工廠商']
+        mapping_df = st.session_state.tasks[mapping_keys + ['實際開始', '實際完成', '完成度(%)']].drop_duplicates(subset=mapping_keys)
+        act_sync = act_sync.reset_index().merge(mapping_df, on=mapping_keys, how='left').set_index('index')
     else:
         act_sync['實際開始'] = None
         act_sync['實際完成'] = None
         act_sync['完成度(%)'] = 0
 
-    # 處理新增列或刪除列產生的空缺，將錯誤的 NaT 轉換為安全的 None
+    # 綁定完畢後，只保留前端需要顯示的欄位
+    act_sync = act_sync[['施工項目', '實際開始', '實際完成', '完成度(%)']]
+
+    # 處理新增列或刪除列產生的空缺
     act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
     act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
     act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-    # 💡 上鎖
     ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
     col1, col2 = st.columns([5, 1])
     with col2:
         btn_save_t = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_tasks", disabled=is_proj_closed)
-    col1, col2 = st.columns([5, 1])
-    with col2:
-        btn_save_t = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_tasks")
         
     if btn_save_t:
         with st.spinner("資料同步中..."):
@@ -329,33 +330,31 @@ with st.expander("試車任務管理", expanded=True):
     }
     ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
 
-   st.subheader("2. 實際進度回報")
+    st.subheader("2. 實際進度回報")
     
-    # 💡 終極修復版：使用 pandas 的 join 自動對齊 Index！
-    c_act_sync = ed_c_plan[['試車項目']].copy()
+    # 💡 試車表同理：抓取「區域+試車項目」作為辨識特徵
+    c_act_sync = ed_c_plan[['區域', '試車項目']].copy()
 
     if not st.session_state.comm_tasks.empty:
-        # 智慧對齊試車進度
-        c_act_sync = c_act_sync.join(st.session_state.comm_tasks[['實際開始', '實際完成', '完成度(%)']])
+        mapping_keys_c = ['區域', '試車項目']
+        mapping_df_c = st.session_state.comm_tasks[mapping_keys_c + ['實際開始', '實際完成', '完成度(%)']].drop_duplicates(subset=mapping_keys_c)
+        c_act_sync = c_act_sync.reset_index().merge(mapping_df_c, on=mapping_keys_c, how='left').set_index('index')
     else:
         c_act_sync['實際開始'] = None
         c_act_sync['實際完成'] = None
         c_act_sync['完成度(%)'] = 0
 
-    # 處理新增列或刪除列產生的空缺
+    c_act_sync = c_act_sync[['試車項目', '實際開始', '實際完成', '完成度(%)']]
+
     c_act_sync['完成度(%)'] = c_act_sync['完成度(%)'].fillna(0).astype(int)
     c_act_sync['實際開始'] = c_act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
     c_act_sync['實際完成'] = c_act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-    # 💡 上鎖
     ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
     col1, col2 = st.columns([5, 1])
     with col2:
         btn_save_c = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_comm", disabled=is_proj_closed)
-    col1, col2 = st.columns([5, 1])
-    with col2:
-        btn_save_c = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_comm" ,disabled=is_proj_closed)
 
     if btn_save_c:
         with st.spinner("資料同步中..."):
@@ -395,8 +394,6 @@ with st.expander("試車任務管理", expanded=True):
                 st.rerun()
             except Exception as e:
                 st.error(f"⚠️ 資料庫寫入失敗: {e}")
-
-# ==========================================
 # 7. 圖表生成
 # ==========================================
 st.divider()
