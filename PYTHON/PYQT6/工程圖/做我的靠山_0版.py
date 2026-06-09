@@ -62,13 +62,13 @@ def load_list(table_name, project_name):
     return [item['name'] for item in res.data] if res.data else []
 
 # ==========================================
-# 2. 樣式注入與輔助函數 (純淨版)
+# 2. 樣式注入與輔助函數 (加入 disabled 支援)
 # ==========================================
-def construction_button(label, key):
-    return st.button(label, key=key, use_container_width=True)
+def construction_button(label, key, disabled=False):
+    return st.button(label, key=key, use_container_width=True, disabled=disabled)
 
-def comm_button(label, key):
-    return st.button(label, key=key, use_container_width=True)
+def comm_button(label, key, disabled=False):
+    return st.button(label, key=key, use_container_width=True, disabled=disabled)
 
 def safe_date(d):
     if pd.isna(d) or d == "" or d is None: return None
@@ -168,6 +168,11 @@ with col_btn:
 
 st.markdown("---")
 
+is_proj_closed = st.session_state.get('is_closed', False)
+
+if is_proj_closed:
+    st.warning("🔒 **此專案已結案！** 系統已進入唯讀模式，所有排程、日誌與檔案上傳功能皆已鎖定。")
+
 # ==========================================
 # 4. 區域與廠商管理 (側邊欄) - 隔離版
 # ==========================================
@@ -229,7 +234,7 @@ with st.expander("施工任務管理", expanded=True):
         "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
         "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
     }
-    ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True)
+    ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True,disabled=is_proj_closed)
 
     st.subheader("2. 實際進度回報")
     col_cfg_act = {
@@ -251,7 +256,7 @@ with st.expander("施工任務管理", expanded=True):
         act_sync.loc[act_sync.index[:min_len], '完成度(%)'] = st.session_state.tasks['完成度(%)'].values[:min_len]
         
     act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
-    ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True)
+    ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True ,disabled=is_proj_closed)
 
     col1, col2 = st.columns([5, 1])
     with col2:
@@ -314,7 +319,7 @@ with st.expander("試車任務管理", expanded=True):
         "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
         "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
     }
-    ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True)
+    ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
 
     st.subheader("2. 實際進度回報")
     
@@ -330,11 +335,11 @@ with st.expander("試車任務管理", expanded=True):
         c_act_sync.loc[c_act_sync.index[:min_len_c], '完成度(%)'] = st.session_state.comm_tasks['完成度(%)'].values[:min_len_c]
         
     c_act_sync['完成度(%)'] = c_act_sync['完成度(%)'].fillna(0).astype(int)
-    ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True)
+    ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
     col1, col2 = st.columns([5, 1])
     with col2:
-        btn_save_c = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_comm")
+        btn_save_c = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_comm" ,disabled=is_proj_closed)
 
     if btn_save_c:
         with st.spinner("資料同步中..."):
@@ -540,9 +545,9 @@ with c1:
     except Exception:
         pass
         
-    new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{selected_project}_{log_date}")
+    new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{selected_project}_{log_date}", disabled=is_proj_closed)
     
-    if st.button("儲存施工日誌", key=f"save_t_{selected_project}", use_container_width=True):
+    if st.button("儲存施工日誌", key=f"save_t_{selected_project}", use_container_width=True, disabled=is_proj_closed):
         try:
             supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
             if new_log.strip():
@@ -704,7 +709,7 @@ st.subheader("📎 專案雲端檔案庫")
 
 c_cat, c_up = st.columns([1, 2])
 with c_cat:
-    file_category = st.selectbox("選擇檔案分類：", ["施工照片", "設計圖", "會議記錄", "報告書", "自訂分類..."])
+    file_category = st.selectbox("選擇檔案分類：", ["施工照片", "設計圖", "會議記錄", "報告書", "自訂分類..."], disabled=is_proj_closed)
     if file_category == "自訂分類...":
         custom_category = st.text_input("請輸入自訂分類名稱：", placeholder="例如：變更設計單")
         final_category = custom_category if custom_category else "未分類"
@@ -712,12 +717,12 @@ with c_cat:
         final_category = file_category
 
 with c_up:
-    uploaded_file = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：")
+    uploaded_file = st.file_uploader(f"上傳【{selected_project} - {final_category}】的檔案：", disabled=is_proj_closed)
 
 if uploaded_file is not None:
     st.info(f"準備上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
     
-    if st.button("🚀 確認上傳至雲端空間", use_container_width=True):
+    if st.button("🚀 確認上傳至雲端空間", use_container_width=True, disabled=is_proj_closed):
         with st.spinner("檔案飛往雲端中..."):
             try:
                 file_bytes = uploaded_file.getvalue()
