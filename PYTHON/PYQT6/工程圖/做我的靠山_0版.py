@@ -770,11 +770,11 @@ if uploaded_files:
 
 
 # ==========================================
-# 13. 專案檔案展示區 (支援批次選取與刪除)
+# 13. 專案檔案展示區 (前置勾選 + 唯一刪除鍵版)
 # ==========================================
 st.divider()
 
-# 💡 魔法 3：預留一個空間給「批次刪除按鈕」(因為要等下面算完選了幾個，按鈕才會出現在最上面)
+# 💡 預留一個空間給「唯一」的刪除按鈕，放在右上角
 col_title, col_batch_btn = st.columns([4, 1])
 with col_title:
     st.subheader(f"📂 【{selected_project}】檔案列表")
@@ -824,42 +824,31 @@ try:
             for i, (cat, files) in enumerate(categorized_files.items()):
                 with tabs[i]:
                     for file_info in files:
-                        # 💡 變更點：加入 Checkbox 核取方塊
-                        col_file, col_chk, col_del = st.columns([5, 1, 1])
+                        # 💡 變更點 1：調整比例，核取方塊在最左側 (0.5)，檔名在右側 (9.5)
+                        col_chk, col_file = st.columns([0.5, 9.5])
                         
-                        with col_file:
-                            st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** *(上傳於: {file_info['created_at']})*")
-                            
                         with col_chk:
-                            # 如果打勾了，就把檔案路徑塞進「待刪除清單」
-                            is_checked = st.checkbox("選取", key=f"chk_{file_info['raw_name']}", disabled=is_proj_closed)
+                            # 💡 變更點 2：加入 label_visibility="collapsed" 隱藏文字，只顯示乾淨的方格
+                            is_checked = st.checkbox("選取", key=f"chk_{file_info['raw_name']}", disabled=is_proj_closed, label_visibility="collapsed")
                             if is_checked:
                                 files_to_delete.append(f"{enc_folder}/{file_info['raw_name']}")
                                 
-                        with col_del:
-                            # 保留單獨刪除功能以備不時之需
-                            if st.button("刪除", key=f"del_{file_info['raw_name']}", disabled=is_proj_closed, use_container_width=True):
-                                with st.spinner("刪除中..."):
-                                    try:
-                                        target_path = f"{enc_folder}/{file_info['raw_name']}"
-                                        supabase.storage.from_("project_files").remove([target_path])
-                                        st.toast(f"✅ 已成功刪除：{file_info['name']}")
-                                        st.rerun() 
-                                    except Exception as e:
-                                        st.error(f"❌ 刪除失敗: {e}")
+                        with col_file:
+                            st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})**  *(上傳於: {file_info['created_at']})*")
+                        
+                        # 💡 變更點 3：徹底移除了每個檔案旁邊的個別「單獨刪除」按鈕
         else:
             st.info("資料夾中無有效檔案。")
 
 except Exception as e:
     st.info("尚無上傳任何檔案或找不到專案資料夾。")
 
-# 💡 魔法 4：如果「待刪除清單」裡面有東西，就在標題旁邊變出紅色的批次刪除按鈕！
+# 💡 變更點 4：只在右上角顯示唯一的刪除按鈕
 if files_to_delete:
     with batch_btn_placeholder:
-        if st.button(f"批次刪除 ({len(files_to_delete)})", type="primary", disabled=is_proj_closed, use_container_width=True):
+        if st.button(f"刪除已選檔案 ({len(files_to_delete)})", type="primary", disabled=is_proj_closed, use_container_width=True):
             with st.spinner(f"正在刪除 {len(files_to_delete)} 個檔案..."):
                 try:
-                    # Supabase 的 remove 原生就支援一次吃一堆陣列路徑！
                     supabase.storage.from_("project_files").remove(files_to_delete)
                     st.toast(f"✅ 成功刪除 {len(files_to_delete)} 個檔案！")
                     st.rerun()
