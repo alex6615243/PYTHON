@@ -225,91 +225,89 @@ with st.expander("施工任務管理", expanded=True):
         st.session_state.tasks[col] = pd.to_datetime(st.session_state.tasks[col], errors='coerce').dt.date
     st.session_state.tasks['是否為里程碑'] = st.session_state.tasks['是否為里程碑'].fillna(False).astype(bool)
 
-    st.subheader("1. 預定計畫")
-    col_cfg_plan = {
-        "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
-        "施工項目": st.column_config.TextColumn("施工項目", required=True),
-        "施工廠商": st.column_config.SelectboxColumn("施工廠商", options=safe_subcontractors, required=True),
-        "預定開始": st.column_config.DateColumn("預定開始", format="MM/DD", required=True),
-        "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
-        "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
-    }
-    ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
+    # 💡 魔法加回：使用 st.form 進入靜音編輯模式，打字再也不會閃退！
+    with st.form(key=f"form_tasks_{selected_project}"):
+        st.subheader("1. 預定計畫")
+        col_cfg_plan = {
+            "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
+            "施工項目": st.column_config.TextColumn("施工項目", required=True),
+            "施工廠商": st.column_config.SelectboxColumn("施工廠商", options=safe_subcontractors, required=True),
+            "預定開始": st.column_config.DateColumn("預定開始", format="MM/DD", required=True),
+            "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
+            "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
+        }
+        ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
 
-    st.subheader("2. 實際進度回報")
-    col_cfg_act = {
-        "施工項目": st.column_config.TextColumn("施工項目", disabled=True),
-        "實際開始": st.column_config.DateColumn("實際開工", format="MM/DD"),
-        "實際完成": st.column_config.DateColumn("實際完成", format="MM/DD"),
-        "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
-    }
+        st.subheader("2. 實際進度回報")
+        col_cfg_act = {
+            "施工項目": st.column_config.TextColumn("施工項目", disabled=True),
+            "實際開始": st.column_config.DateColumn("實際開工", format="MM/DD"),
+            "實際完成": st.column_config.DateColumn("實際完成", format="MM/DD"),
+            "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
+        }
 
-    # 💡 終極修復版：抓取「區域+項目+廠商」作為辨識特徵
-    act_sync = ed_plan[['區域', '施工項目', '施工廠商']].copy()
+        # 從資料庫原始狀態抓取，保留陣列對齊邏輯
+        act_sync = st.session_state.tasks[['區域', '施工項目', '施工廠商']].copy()
 
-    if not st.session_state.tasks.empty:
-        # 使用 merge 進行「特徵綁定」，徹底免疫行數錯位的問題！
-        mapping_keys = ['區域', '施工項目', '施工廠商']
-        mapping_df = st.session_state.tasks[mapping_keys + ['實際開始', '實際完成', '完成度(%)']].drop_duplicates(subset=mapping_keys)
-        act_sync = act_sync.reset_index().merge(mapping_df, on=mapping_keys, how='left').set_index('index')
-    else:
-        act_sync['實際開始'] = None
-        act_sync['實際完成'] = None
-        act_sync['完成度(%)'] = 0
+        if not st.session_state.tasks.empty:
+            mapping_keys = ['區域', '施工項目', '施工廠商']
+            mapping_df = st.session_state.tasks[mapping_keys + ['實際開始', '實際完成', '完成度(%)']].drop_duplicates(subset=mapping_keys)
+            act_sync = act_sync.reset_index().merge(mapping_df, on=mapping_keys, how='left').set_index('index')
+        else:
+            act_sync['實際開始'] = None
+            act_sync['實際完成'] = None
+            act_sync['完成度(%)'] = 0
 
-    # 綁定完畢後，只保留前端需要顯示的欄位
-    act_sync = act_sync[['施工項目', '實際開始', '實際完成', '完成度(%)']]
+        act_sync = act_sync[['施工項目', '實際開始', '實際完成', '完成度(%)']]
 
-    # 處理新增列或刪除列產生的空缺
-    act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
-    act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
-    act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
+        act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
+        act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
+        act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-    ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
+        ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
-    col1, col2 = st.columns([5, 1])
-    with col2:
-        btn_save_t = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_tasks", disabled=is_proj_closed)
-        
-    if btn_save_t:
-        with st.spinner("資料同步中..."):
-            new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
-            new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
-            new_tasks['備註'] = new_tasks['備註'].fillna("")
-
-            m_mask = new_tasks['是否為里程碑'] == True
-            new_tasks.loc[m_mask, '預定完成'] = new_tasks.loc[m_mask, '預定開始']
-            new_tasks.loc[m_mask, '實際完成'] = new_tasks.loc[m_mask, '實際開始']
-            new_tasks.loc[new_tasks['實際完成'].notnull(), '完成度(%)'] = 100
-
-            clean_t = new_tasks.dropna(subset=['施工項目', '預定開始', '預定完成']).copy()
+        # 💡 表單專用儲存按鈕：按下後才會一次性送出 ed_plan 與 ed_act 的所有變更
+        btn_save_t = st.form_submit_button("儲存並同步", type="primary", use_container_width=True, disabled=is_proj_closed)
             
-            try:
-                supabase.table("tasks").delete().eq("project_name", selected_project).execute()
+        if btn_save_t:
+            with st.spinner("資料同步中..."):
+                new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
+                new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
+                new_tasks['備註'] = new_tasks['備註'].fillna("")
+
+                m_mask = new_tasks['是否為里程碑'] == True
+                new_tasks.loc[m_mask, '預定完成'] = new_tasks.loc[m_mask, '預定開始']
+                new_tasks.loc[m_mask, '實際完成'] = new_tasks.loc[m_mask, '實際開始']
+                new_tasks.loc[new_tasks['實際完成'].notnull(), '完成度(%)'] = 100
+
+                clean_t = new_tasks.dropna(subset=['施工項目', '預定開始', '預定完成']).copy()
                 
-                if not clean_t.empty:
-                    up_t = []
-                    for _, r in clean_t.iterrows():
-                        comp_val = r.get('完成度(%)', 0)
-                        comp_int = 0 if pd.isna(comp_val) or comp_val == "" else int(float(comp_val))
-                        rmk = r.get('備註', '')
-                        rmk_str = "" if pd.isna(rmk) else str(rmk)
-                        
-                        up_t.append({
-                            "project_name": selected_project, 
-                            "task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), 
-                            "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": str(r['區域']), 
-                            "is_milestone": bool(r.get('是否為里程碑', False)), 
-                            "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
-                            "completion": comp_int, "remarks": rmk_str
-                        })
-                    supabase.table("tasks").insert(up_t).execute()
-                
-                st.session_state.tasks = clean_t
-                st.success("✅ 施工進度已成功同步！")
-                st.rerun()
-            except Exception as e:
-                st.error(f"⚠️ 資料庫寫入失敗: {e}")
+                try:
+                    supabase.table("tasks").delete().eq("project_name", selected_project).execute()
+                    
+                    if not clean_t.empty:
+                        up_t = []
+                        for _, r in clean_t.iterrows():
+                            comp_val = r.get('完成度(%)', 0)
+                            comp_int = 0 if pd.isna(comp_val) or comp_val == "" else int(float(comp_val))
+                            rmk = r.get('備註', '')
+                            rmk_str = "" if pd.isna(rmk) else str(rmk)
+                            
+                            up_t.append({
+                                "project_name": selected_project, 
+                                "task_name": str(r['施工項目']), "subcontractor": str(r['施工廠商']), 
+                                "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": str(r['區域']), 
+                                "is_milestone": bool(r.get('是否為里程碑', False)), 
+                                "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
+                                "completion": comp_int, "remarks": rmk_str
+                            })
+                        supabase.table("tasks").insert(up_t).execute()
+                    
+                    st.session_state.tasks = clean_t
+                    st.success("✅ 施工進度已成功同步！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"⚠️ 資料庫寫入失敗: {e}")
 
 # ==========================================
 # 6. 試車任務管理
@@ -320,80 +318,80 @@ with st.expander("試車任務管理", expanded=True):
         st.session_state.comm_tasks[col] = pd.to_datetime(st.session_state.comm_tasks[col], errors='coerce').dt.date
     st.session_state.comm_tasks['是否為里程碑'] = st.session_state.comm_tasks['是否為里程碑'].fillna(False).astype(bool)
 
-    st.subheader("1. 預定計畫")
-    col_cfg_c_plan = {
-        "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
-        "試車項目": st.column_config.TextColumn("試車項目", required=True),
-        "預定開始": st.column_config.DateColumn("預定開始", format="MM/DD", required=True),
-        "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
-        "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
-    }
-    ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
+    # 💡 試車區塊也一併加入 st.form 靜音防護
+    with st.form(key=f"form_comm_{selected_project}"):
+        st.subheader("1. 預定計畫")
+        col_cfg_c_plan = {
+            "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
+            "試車項目": st.column_config.TextColumn("試車項目", required=True),
+            "預定開始": st.column_config.DateColumn("預定開始", format="MM/DD", required=True),
+            "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
+            "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
+        }
+        ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
 
-    st.subheader("2. 實際進度回報")
-    
-    # 💡 試車表同理：抓取「區域+試車項目」作為辨識特徵
-    c_act_sync = ed_c_plan[['區域', '試車項目']].copy()
+        st.subheader("2. 實際進度回報")
+        
+        c_act_sync = st.session_state.comm_tasks[['區域', '試車項目']].copy()
 
-    if not st.session_state.comm_tasks.empty:
-        mapping_keys_c = ['區域', '試車項目']
-        mapping_df_c = st.session_state.comm_tasks[mapping_keys_c + ['實際開始', '實際完成', '完成度(%)']].drop_duplicates(subset=mapping_keys_c)
-        c_act_sync = c_act_sync.reset_index().merge(mapping_df_c, on=mapping_keys_c, how='left').set_index('index')
-    else:
-        c_act_sync['實際開始'] = None
-        c_act_sync['實際完成'] = None
-        c_act_sync['完成度(%)'] = 0
+        if not st.session_state.comm_tasks.empty:
+            mapping_keys_c = ['區域', '試車項目']
+            mapping_df_c = st.session_state.comm_tasks[mapping_keys_c + ['實際開始', '實際完成', '完成度(%)']].drop_duplicates(subset=mapping_keys_c)
+            c_act_sync = c_act_sync.reset_index().merge(mapping_df_c, on=mapping_keys_c, how='left').set_index('index')
+        else:
+            c_act_sync['實際開始'] = None
+            c_act_sync['實際完成'] = None
+            c_act_sync['完成度(%)'] = 0
 
-    c_act_sync = c_act_sync[['試車項目', '實際開始', '實際完成', '完成度(%)']]
+        c_act_sync = c_act_sync[['試車項目', '實際開始', '實際完成', '完成度(%)']]
 
-    c_act_sync['完成度(%)'] = c_act_sync['完成度(%)'].fillna(0).astype(int)
-    c_act_sync['實際開始'] = c_act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
-    c_act_sync['實際完成'] = c_act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
+        c_act_sync['完成度(%)'] = c_act_sync['完成度(%)'].fillna(0).astype(int)
+        c_act_sync['實際開始'] = c_act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
+        c_act_sync['實際完成'] = c_act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-    ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
+        ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
-    col1, col2 = st.columns([5, 1])
-    with col2:
-        btn_save_c = st.button("儲存並同步", type="primary", use_container_width=True, key="btn_save_comm", disabled=is_proj_closed)
+        # 💡 表單專用儲存按鈕
+        btn_save_c = st.form_submit_button("儲存並同步", type="primary", use_container_width=True, disabled=is_proj_closed)
 
-    if btn_save_c:
-        with st.spinner("資料同步中..."):
-            new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
-            new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
-            new_c_tasks['備註'] = new_c_tasks['備註'].fillna("")
+        if btn_save_c:
+            with st.spinner("資料同步中..."):
+                new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
+                new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
+                new_c_tasks['備註'] = new_c_tasks['備註'].fillna("")
 
-            mc_mask = new_c_tasks['是否為里程碑'] == True
-            new_c_tasks.loc[mc_mask, '預定完成'] = new_c_tasks.loc[mc_mask, '預定開始']
-            new_c_tasks.loc[mc_mask, '實際完成'] = new_c_tasks.loc[mc_mask, '實際開始']
-            new_c_tasks.loc[new_c_tasks['實際完成'].notnull(), '完成度(%)'] = 100
+                mc_mask = new_c_tasks['是否為里程碑'] == True
+                new_c_tasks.loc[mc_mask, '預定完成'] = new_c_tasks.loc[mc_mask, '預定開始']
+                new_c_tasks.loc[mc_mask, '實際完成'] = new_c_tasks.loc[mc_mask, '實際開始']
+                new_c_tasks.loc[new_c_tasks['實際完成'].notnull(), '完成度(%)'] = 100
 
-            clean_c = new_c_tasks.dropna(subset=['試車項目', '預定開始', '預定完成']).copy()
-            
-            try:
-                supabase.table("commissioning_tasks").delete().eq("project_name", selected_project).execute()
+                clean_c = new_c_tasks.dropna(subset=['試車項目', '預定開始', '預定完成']).copy()
                 
-                if not clean_c.empty:
-                    up_c = []
-                    for _, r in clean_c.iterrows():
-                        comp_val = r.get('完成度(%)', 0)
-                        comp_int = 0 if pd.isna(comp_val) or comp_val == "" else int(float(comp_val))
-                        rmk = r.get('備註', '')
-                        rmk_str = "" if pd.isna(rmk) else str(rmk)
-                        
-                        up_c.append({
-                            "project_name": selected_project, 
-                            "test_item": str(r['試車項目']), "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), 
-                            "region": str(r['區域']), "is_milestone": bool(r.get('是否為里程碑', False)), 
-                            "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
-                            "completion": comp_int, "remarks": rmk_str
-                        })
-                    supabase.table("commissioning_tasks").insert(up_c).execute()
-                
-                st.session_state.comm_tasks = clean_c
-                st.success("✅ 試車進度已成功同步！")
-                st.rerun()
-            except Exception as e:
-                st.error(f"⚠️ 資料庫寫入失敗: {e}")
+                try:
+                    supabase.table("commissioning_tasks").delete().eq("project_name", selected_project).execute()
+                    
+                    if not clean_c.empty:
+                        up_c = []
+                        for _, r in clean_c.iterrows():
+                            comp_val = r.get('完成度(%)', 0)
+                            comp_int = 0 if pd.isna(comp_val) or comp_val == "" else int(float(comp_val))
+                            rmk = r.get('備註', '')
+                            rmk_str = "" if pd.isna(rmk) else str(rmk)
+                            
+                            up_c.append({
+                                "project_name": selected_project, 
+                                "test_item": str(r['試車項目']), "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), 
+                                "region": str(r['區域']), "is_milestone": bool(r.get('是否為里程碑', False)), 
+                                "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), 
+                                "completion": comp_int, "remarks": rmk_str
+                            })
+                        supabase.table("commissioning_tasks").insert(up_c).execute()
+                    
+                    st.session_state.comm_tasks = clean_c
+                    st.success("✅ 試車進度已成功同步！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"⚠️ 資料庫寫入失敗: {e}")
 # 7. 圖表生成
 # ==========================================
 st.divider()
