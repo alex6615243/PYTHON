@@ -11,7 +11,6 @@ import os
 import requests
 import urllib.parse
 
-
 # ==========================================
 # 0. 頁面基本設定 (⚠️ 必須在第一行)
 # ==========================================
@@ -95,10 +94,10 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
     st.divider()
     del_p = st.selectbox("選擇要刪除的專案", st.session_state.projects)
     
-    # 💡 魔法：建立一個專屬的刪除確認彈窗
+    # 💡 保留安全機制：專案刪除防呆對話框
     @st.dialog("⚠️ 確定要刪除專案嗎？")
     def confirm_delete(project_name):
-        st.error(f"即將徹底刪除【{project_name}】！\n\n包含所有任務資料、進度、日誌與上傳的檔案都將被清空。")
+        st.error(f"即將徹底刪除【{project_name}】！\n\n包含所有任務資料、進度、日誌與檔案都將被清空。")
         st.warning("此動作無法復原，請確認您已備份所需資料。")
         if st.button("🚨 我確定要徹底刪除", type="primary", use_container_width=True):
             try:
@@ -114,16 +113,13 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
             except Exception as e: 
                 st.error(f"刪除失敗: {e}")
 
-    # 💡 側邊欄的按鈕現在只負責「呼叫彈窗」，不直接刪除資料
     if st.button("刪除專案", type="primary", use_container_width=True):
         if len(st.session_state.projects) > 1:
-            confirm_delete(del_p) # 呼叫上方的彈窗函數
+            confirm_delete(del_p)
         else:
             st.error("必須保留至少一個專案！")
 
-# ==========================================
-# 3. 專案切換與動態資料載入 (加入結案狀態判斷)
-# ==========================================
+# 讀取結案狀態
 col_title, col_btn = st.columns([5, 1])
 
 if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
@@ -133,7 +129,6 @@ if 'current_project' not in st.session_state or st.session_state.current_project
     st.session_state.regions = load_list("regions", selected_project)
     st.session_state.subcontractors = load_list("subcontractors", selected_project)
     
-    # 💡 讀取專案結案狀態
     try:
         p_res = supabase.table("projects").select("is_closed, closed_date").eq("name", selected_project).execute()
         if p_res.data:
@@ -151,7 +146,7 @@ with col_title:
     st.title(f"{title_icon} {selected_project} ")
 
 with col_btn:
-    st.write("") # 排版對齊用
+    st.write("") 
     if st.session_state.get('is_closed', False):
         if st.button("🔓 解除結案", use_container_width=True):
             try:
@@ -182,13 +177,18 @@ if is_proj_closed:
     st.warning("🔒 **此專案已結案！** 系統已進入唯讀模式，所有排程、日誌與檔案上傳功能皆已鎖定。")
 
 # ==========================================
-# 4. 區域與廠商管理 (側邊欄) - 隔離版
+# 4. 區域與廠商管理 (側邊欄) - 隔離防護版
 # ==========================================
 st.sidebar.header(f"基礎資料管理 ({selected_project})")
 with st.sidebar.expander("區域與廠商管理"):
+    
+    # 💡 核心防護：強烈提醒表單重整機制，教導使用者正確的操作流！
+    if not is_proj_closed:
+        st.error("⚠️ **新增前防呆提醒**\n\n新增項目會重新整理網頁來更新下拉選單。請務必先將右側任務 **「儲存並同步」**，否則尚未存檔的內容將會遺失！")
+        
     t_reg, t_sub = st.tabs(["區域", "廠商"])
     with t_reg:
-        nr = st.text_input("新增區域名稱", key="nr_in", disabled=is_proj_closed)
+        nr = st.text_input("新增區域名稱", key="nr_in", disabled=is_proj_closed, placeholder="輸入前請先確認任務已存檔")
         if construction_button("加入區域", key="btn_add_reg", disabled=is_proj_closed):
             if nr and nr not in st.session_state.regions:
                 supabase.table("regions").insert({"name": nr, "project_name": selected_project}).execute()
@@ -205,7 +205,7 @@ with st.sidebar.expander("區域與廠商管理"):
             else: st.error("⚠️ 該區域尚有任務")
             
     with t_sub:
-        ns = st.text_input("新增廠商名稱", key="ns_in", disabled=is_proj_closed)
+        ns = st.text_input("新增廠商名稱", key="ns_in", disabled=is_proj_closed, placeholder="輸入前請先確認任務已存檔")
         if construction_button("加入廠商", key="btn_add_sub", disabled=is_proj_closed):
             if ns and ns not in st.session_state.subcontractors:
                 supabase.table("subcontractors").insert({"name": ns, "project_name": selected_project}).execute()
@@ -271,7 +271,7 @@ with st.expander("施工任務管理", expanded=True):
 
         ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
 
-        # 💡 排版：加入「復原上一步」按鈕
+        # 💡 保留安全機制：復原上一次儲存
         hist_key_t = f"tasks_hist_{selected_project}"
         can_undo_t = hist_key_t in st.session_state
         
@@ -310,7 +310,7 @@ with st.expander("施工任務管理", expanded=True):
             
         if btn_save_t:
             with st.spinner("資料同步中..."):
-                st.session_state[hist_key_t] = st.session_state.tasks.copy() # 儲存前先備份
+                st.session_state[hist_key_t] = st.session_state.tasks.copy() 
                 
                 new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
                 new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
@@ -345,7 +345,7 @@ with st.expander("施工任務管理", expanded=True):
                         supabase.table("tasks").insert(up_t).execute()
                     
                     st.session_state.tasks = clean_t
-                    st.success("✅ 施工進度已成功同步！(若有誤刪，可點擊復原上一次儲存)")
+                    st.success("✅ 施工進度已成功同步！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"⚠️ 資料庫寫入失敗: {e}")
@@ -371,6 +371,7 @@ with st.expander("試車任務管理", expanded=True):
         ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
 
         st.subheader("2. 實際進度回報")
+        
         c_act_sync = st.session_state.comm_tasks[['區域', '試車項目']].copy()
 
         if not st.session_state.comm_tasks.empty:
@@ -426,7 +427,7 @@ with st.expander("試車任務管理", expanded=True):
 
         if btn_save_c:
             with st.spinner("資料同步中..."):
-                st.session_state[hist_key_c] = st.session_state.comm_tasks.copy() # 儲存前先備份
+                st.session_state[hist_key_c] = st.session_state.comm_tasks.copy()
                 
                 new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
                 new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
@@ -460,7 +461,7 @@ with st.expander("試車任務管理", expanded=True):
                         supabase.table("commissioning_tasks").insert(up_c).execute()
                     
                     st.session_state.comm_tasks = clean_c
-                    st.success("✅ 試車進度已成功同步！(若有誤刪，可點擊復原上一次儲存)")
+                    st.success("✅ 試車進度已成功同步！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"⚠️ 資料庫寫入失敗: {e}")
@@ -549,9 +550,7 @@ def draw_gantt(df, title, color_col):
                 name=leg_name, legendgroup=leg_name, showlegend=show_leg, hovertemplate=hover_text
             ))
 
-    is_closed = st.session_state.get('is_closed', False)
-    
-    if is_closed and st.session_state.get('closed_date'):
+    if is_proj_closed and st.session_state.get('closed_date'):
         closed_ts = pd.to_datetime(st.session_state.closed_date)
         fig.add_vline(x=closed_ts, line_width=2, line_dash="dash", line_color="gray", layer="above")
         fig.add_annotation(x=closed_ts, y=1, yref="paper", yanchor="bottom", text="結案日", showarrow=False, font=dict(color="gray", size=14))
@@ -643,9 +642,9 @@ with c2:
         sel_c = st.selectbox("選擇試車項目：", comm_opts, key=f"sel_note_c_{selected_project}")
         if sel_c:
             row_c = st.session_state.comm_tasks[st.session_state.comm_tasks['試車項目'] == sel_c].iloc[0]
-            new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{selected_project}_{sel_c}")
+            new_note_c = st.text_area(f"【{sel_c}】備註：", value=row_c.get('備註', ''), height=150, key=f"txt_c_{selected_project}_{sel_c}", disabled=is_proj_closed)
             
-            if st.button("儲存試車備註", key=f"save_c_{selected_project}", use_container_width=True):
+            if st.button("儲存試車備註", key=f"save_c_{selected_project}", use_container_width=True, disabled=is_proj_closed):
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
@@ -662,8 +661,8 @@ with st.sidebar.expander("檔案管理"):
     st.download_button("下載試車 CSV", data=st.session_state.comm_tasks.to_csv(index=False).encode('utf-8-sig'), file_name=f"{selected_project}_comm.csv", use_container_width=True)
     
     st.divider()
-    bn = st.text_input("存檔名稱", key="bn_in")
-    if construction_button("立即存檔", key="btn_save_snap"):
+    bn = st.text_input("存檔名稱", key="bn_in", disabled=is_proj_closed)
+    if construction_button("立即存檔", key="btn_save_snap", disabled=is_proj_closed):
         clean_snap_t = st.session_state.tasks.dropna(subset=['施工項目', '預定開始', '預定完成'])
         clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '預定開始', '預定完成'])
         snap = {"tasks": clean_snap_t.to_json(orient='records', date_format='iso'), "comm": clean_snap_c.to_json(orient='records', date_format='iso')}
@@ -677,7 +676,7 @@ with st.sidebar.expander("檔案管理"):
         sel_b = st.selectbox("選擇檔案回復", options=list(opts.keys()))
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("確認回復", use_container_width=True, key="btn_restore"):
+            if st.button("確認回復", use_container_width=True, key="btn_restore", disabled=is_proj_closed):
                 try:
                     snap_res = supabase.table("tasks_backups").select("data_json").eq("id", opts[sel_b]).execute()
                     full_data = json.loads(snap_res.data[0]['data_json'])
@@ -707,7 +706,7 @@ with st.sidebar.expander("檔案管理"):
                     st.rerun()
                 except Exception as e: st.error(f"回復失敗: {e}")
         with c2:
-            if st.button("刪除存檔", type="primary", use_container_width=True, key="btn_del_snap"):
+            if st.button("刪除存檔", type="primary", use_container_width=True, key="btn_del_snap", disabled=is_proj_closed):
                 supabase.table("tasks_backups").delete().eq("id", opts[sel_b]).execute()
                 st.rerun()
 
@@ -724,14 +723,11 @@ components.html(
         const buttons = doc.querySelectorAll('.stButton button');
         buttons.forEach(btn => {
             const text = btn.innerText;
-            
-            // 🔹 只要按鈕文字包含這些字，全部強制變藍色
             if (text.includes('儲存施工') || text.includes('加入區域') || text.includes('加入廠商') || text.includes('立即存檔')) {
                 btn.style.backgroundColor = '#003366';
                 btn.style.color = '#FFFFFF';
                 btn.style.border = 'none';
             } 
-            // 🔸 只要按鈕文字包含這些字，全部強制變綠色
             else if (text.includes('LINE') || text.includes('儲存試車')) {
                 btn.style.backgroundColor = '#1B5E20';
                 btn.style.color = '#FFFFFF';
@@ -739,10 +735,7 @@ components.html(
             }
         });
     };
-    
-    // 立即執行一次
     styleButtons();
-    // 建立監視器，只要您點擊網頁任何地方，確保按鈕顏色不會掉下來
     const observer = new MutationObserver(styleButtons);
     observer.observe(doc.body, { childList: true, subtree: true });
     </script>
@@ -781,7 +774,6 @@ def decode_safe(safe_name):
 st.divider()
 st.subheader("工程資料夾")
 
-# 💡 魔法 1：初始化一個用來重置 Uploader 的 Key
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
@@ -791,7 +783,6 @@ with c_cat:
     final_category = custom_category.strip() if custom_category.strip() else "未分類"
 
 with c_up:
-    # 💡 綁定動態 Key，只要 Key 改變，這個區塊就會強制清空重置！
     uploaded_files = st.file_uploader(
         f"上傳【{selected_project} - {final_category}】的檔案：", 
         disabled=is_proj_closed, 
@@ -800,11 +791,10 @@ with c_up:
     )
 
 if uploaded_files:
-    # 💡 魔法 2：排版加入「一鍵清除」按鈕
     col_info, col_clear = st.columns([3, 1])
     with col_clear:
         if st.button("清除檔案", use_container_width=True):
-            st.session_state.uploader_key += 1 # 改變鑰匙，觸發重置
+            st.session_state.uploader_key += 1 
             st.rerun()
             
     with col_info:
@@ -843,7 +833,7 @@ if uploaded_files:
             
             if success_count > 0:
                 st.success(f"✅ 成功上傳 {success_count} 個檔案！")
-                st.session_state.uploader_key += 1 # 上傳成功後自動清空上傳區
+                st.session_state.uploader_key += 1 
                 st.balloons()
                 st.rerun() 
 
@@ -861,7 +851,6 @@ try:
         hist_key_f = f"files_hist_{selected_project}"
         can_undo_f = hist_key_f in st.session_state
         
-        # 💡 排版：加入「復原誤刪」的救援按鈕
         col_title, col_undo, col_batch_btn = st.columns([4, 2, 2])
         with col_title:
             st.subheader(f"【{selected_project}】檔案列表")
@@ -872,7 +861,6 @@ try:
 
         files_to_delete = []
         
-        # 💡 過濾掉已經被丟進資源回收桶 (.trash) 的檔案
         valid_files = [f for f in (file_list or []) if isinstance(f, dict) and f.get('name') and f.get('name') != '.emptyFolderPlaceholder' and not f.get('name').endswith('.trash')]
         
         if not valid_files:
@@ -917,12 +905,10 @@ try:
             else:
                 st.info("資料夾中無有效檔案。")
 
-        # 💡 復原魔法：將垃圾桶內的檔案搬回原位
         if btn_undo_f and can_undo_f:
             with st.spinner("正在救援檔案..."):
                 try:
                     for f_path in st.session_state[hist_key_f]:
-                        # 將 .trash 結尾的檔案重新命名回來 (軟刪除復原)
                         supabase.storage.from_("project_files").move(f"{f_path}.trash", f_path)
                     
                     del st.session_state[hist_key_f]
@@ -931,13 +917,11 @@ try:
                 except Exception as e:
                     st.error(f"❌ 救援失敗: {e}")
 
-        # 💡 刪除魔法：不真正刪除，而是加上 .trash 假名丟進回收桶
         if submitted:
             if files_to_delete:
                 with st.spinner(f"正在將 {len(files_to_delete)} 個檔案移至垃圾桶..."):
                     try:
                         for f_path in files_to_delete:
-                            # 軟刪除：改副檔名隱藏起來
                             supabase.storage.from_("project_files").move(f_path, f"{f_path}.trash")
                         
                         st.session_state[hist_key_f] = files_to_delete
