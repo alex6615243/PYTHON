@@ -198,7 +198,7 @@ st.sidebar.header(f"基礎資料管理 ({selected_project})")
 with st.sidebar.expander("區域與廠商管理"):
     
     if not is_proj_closed:
-        st.error("⚠️ **新增前防呆提醒**\n\n新增項目會重新整理網頁來更新下拉選單。請務必先將右側任務 **「儲存並同步」**，否則尚未存檔的內容將會遺失！")
+        st.error("**提醒**\n\n新增前請先將右側任務 **「儲存並同步」**！")
         
     # 💡 建立基礎資料新增的二次確認對話框
     @st.dialog("⚠️ 偵測到未儲存的任務變更")
@@ -209,10 +209,10 @@ with st.sidebar.expander("區域與廠商管理"):
         
         c_back, c_go = st.columns(2)
         with c_back:
-            if st.button("↩️ 放棄新增（先去右邊存檔）", use_container_width=True):
+            if st.button("放棄新增（先去右邊存檔）", use_container_width=True):
                 st.rerun()
         with c_go:
-            if st.button("🔥 不存檔，確定直接新增", type="primary", use_container_width=True):
+            if st.button("不存檔，確定直接新增", type="primary", use_container_width=True):
                 try:
                     if data_type == "region":
                         supabase.table("regions").insert({"name": item_name, "project_name": selected_project}).execute()
@@ -264,7 +264,7 @@ with st.sidebar.expander("區域與廠商管理"):
                 supabase.table("subcontractors").delete().eq("name", ds).eq("project_name", selected_project).execute()
                 st.session_state.subcontractors.remove(ds)
                 st.rerun()
-            else: st.error("⚠️ 該廠商尚有任務")
+            else: st.error("該廠商尚有任務")
 
 safe_regions = st.session_state.regions if st.session_state.regions else ["未設定"]
 safe_subcontractors = st.session_state.subcontractors if st.session_state.subcontractors else ["未設定"]
@@ -349,7 +349,7 @@ with st.expander("施工任務管理", expanded=True):
                     
                     st.session_state.tasks = clean_t
                     del st.session_state[hist_key_t]
-                    st.success("✅ 已完美復原至上一次的任務狀態！")
+                    st.success("✅ 已復原！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"⚠️ 復原失敗: {e}")
@@ -443,7 +443,7 @@ with st.expander("試車任務管理", expanded=True):
         
         col_space, col_undo, col_save = st.columns([6, 2, 2])
         with col_undo:
-            btn_undo_c = st.form_submit_button("↩️ 復原上一次儲存", disabled=is_proj_closed or not can_undo_c, use_container_width=True)
+            btn_undo_c = st.form_submit_button("復原上一次儲存", disabled=is_proj_closed or not can_undo_c, use_container_width=True)
         with col_save:
             btn_save_c = st.form_submit_button("儲存並同步", type="primary", disabled=is_proj_closed, use_container_width=True)
 
@@ -468,7 +468,7 @@ with st.expander("試車任務管理", expanded=True):
                     
                     st.session_state.comm_tasks = clean_c
                     del st.session_state[hist_key_c]
-                    st.success("✅ 已完美復原至上一次的試車狀態！")
+                    st.success("✅ 已復原！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"⚠️ 復原失敗: {e}")
@@ -551,7 +551,7 @@ def draw_gantt(df, title, color_col):
     color_map = {v: px.colors.qualitative.Plotly[i % 10] for i, v in enumerate(p_df[color_col].unique())}
     draw_df = p_df[~p_df['是否為里程碑']].copy()
     
-    if draw_df.empty: return st.warning("⚠️ 至少需有一項非里程碑任務")
+    if draw_df.empty: return st.warning("至少需有一項非里程碑任務")
         
     draw_df['預定開始_str'] = draw_df['預定開始'].dt.strftime('%Y-%m-%d')
     draw_df['預定完成_str'] = draw_df['預定完成'].dt.strftime('%Y-%m-%d')
@@ -680,7 +680,7 @@ with c1:
             supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
             if new_log.strip():
                 supabase.table("daily_logs").insert({"project_name": selected_project, "log_date": str(log_date), "content": new_log}).execute()
-            st.success(f"✅ {log_date} 日誌已同步至雲端！")
+            st.success(f"✅ {log_date} 已儲存！")
             st.rerun() 
         except Exception as e:
             st.error(f"寫入失敗: {e}")
@@ -698,7 +698,7 @@ with c2:
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
-                    st.success("✅ 試車備註已同步至雲端！")
+                    st.success("✅ 已儲存！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
     else: st.info("尚無試車項目可供填寫備註。")
 
@@ -717,7 +717,7 @@ with st.sidebar.expander("檔案管理"):
         clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '預定開始', '預定完成'])
         snap = {"tasks": clean_snap_t.to_json(orient='records', date_format='iso'), "comm": clean_snap_c.to_json(orient='records', date_format='iso')}
         supabase.table("tasks_backups").insert({"backup_name": f"[{selected_project}] {bn if bn else '自動備份'}", "data_json": json.dumps(snap)}).execute()
-        st.toast("已建立雲端存檔")
+        st.toast("已建立")
         st.rerun()
 
     res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
@@ -900,7 +900,7 @@ try:
         with col_title:
             st.subheader(f"【{selected_project}】檔案列表")
         with col_undo:
-            btn_undo_f = st.form_submit_button("↩️ 復原剛刪除的檔案", disabled=is_proj_closed or not can_undo_f, use_container_width=True)
+            btn_undo_f = st.form_submit_button("復原剛刪除的檔案", disabled=is_proj_closed or not can_undo_f, use_container_width=True)
         with col_batch_btn:
             submitted = st.form_submit_button("刪除已選檔案", type="primary", disabled=is_proj_closed, use_container_width=True)
 
@@ -909,7 +909,7 @@ try:
         valid_files = [f for f in (file_list or []) if isinstance(f, dict) and f.get('name') and f.get('name') != '.emptyFolderPlaceholder' and not f.get('name').endswith('.trash')]
         
         if not valid_files:
-            st.info("尚無上傳任何有效檔案。")
+            st.info("尚無上傳檔案。")
         else:
             categorized_files = {}
             for f in valid_files:
@@ -948,7 +948,7 @@ try:
                             with col_file:
                                 st.markdown(f"📄 **[{file_info['name']}]({file_info['url']})** *(上傳於: {file_info['created_at']})*")
             else:
-                st.info("資料夾中無有效檔案。")
+                st.info("資料夾中無檔案。")
 
         if btn_undo_f and can_undo_f:
             with st.spinner("正在救援檔案..."):
