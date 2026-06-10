@@ -198,7 +198,7 @@ st.sidebar.header(f"基礎資料管理 ({selected_project})")
 with st.sidebar.expander("區域與廠商管理"):
     
     if not is_proj_closed:
-        st.error("**提醒**\n\n新增前請先將右側任務 **「儲存並同步」**！")
+        st.error("新增前請先將右側任務 **「儲存並同步」**！")
         
     # 💡 建立基礎資料新增的二次確認對話框
     @st.dialog("⚠️ 偵測到未儲存的任務變更")
