@@ -10,6 +10,9 @@ import tempfile
 import os
 import requests
 import urllib.parse
+import base64
+import re
+import streamlit.components.v1 as components
 
 # ==========================================
 # 0. 頁面基本設定 (⚠️ 必須在第一行)
@@ -72,6 +75,18 @@ def safe_date(d):
     if pd.isna(d) or d == "" or d is None: return None
     return d.isoformat() if hasattr(d, 'isoformat') else str(d)
 
+# 💡 偵測右側表格是否有尚未儲存的改動的魔法函數
+def has_unsaved_changes():
+    for k in [f"ed_plan_state_{selected_project}", f"ed_act_state_{selected_project}", 
+              f"ed_c_plan_state_{selected_project}", f"ed_c_act_state_{selected_project}"]:
+        if k in st.session_state:
+            state = st.session_state[k]
+            if isinstance(state, dict):
+                # 只要 Streamlit 偵測到編輯、新增、刪除任何一列，立刻回傳 True
+                if state.get("edited_rows") or state.get("added_rows") or state.get("deleted_rows"):
+                    return True
+    return False
+
 # ==========================================
 # 3. 專案切換與動態資料載入
 # ==========================================
@@ -94,7 +109,7 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
     st.divider()
     del_p = st.selectbox("選擇要刪除的專案", st.session_state.projects)
     
-    # 💡 保留安全機制：專案刪除防呆對話框
+    # 專案刪除防呆對話框
     @st.dialog("⚠️ 確定要刪除專案嗎？")
     def confirm_delete(project_name):
         st.error(f"即將徹底刪除【{project_name}】！\n\n包含所有任務資料、進度、日誌與檔案都將被清空。")
@@ -177,23 +192,50 @@ if is_proj_closed:
     st.warning("🔒 **此專案已結案！** 系統已進入唯讀模式，所有排程、日誌與檔案上傳功能皆已鎖定。")
 
 # ==========================================
-# 4. 區域與廠商管理 (側邊欄) - 隔離防護版
+# 4. 區域與廠商管理 (側邊欄) - 智慧阻斷警告版
 # ==========================================
 st.sidebar.header(f"基礎資料管理 ({selected_project})")
 with st.sidebar.expander("區域與廠商管理"):
     
-    # 💡 核心防護：強烈提醒表單重整機制，教導使用者正確的操作流！
     if not is_proj_closed:
         st.error("⚠️ **新增前防呆提醒**\n\n新增項目會重新整理網頁來更新下拉選單。請務必先將右側任務 **「儲存並同步」**，否則尚未存檔的內容將會遺失！")
         
+    # 💡 建立基礎資料新增的二次確認對話框
+    @st.dialog("⚠️ 偵測到未儲存的任務變更")
+    def confirm_add_base_data(data_type, item_name):
+        st.error("右側表格有「尚未儲存」的編輯內容！")
+        st.warning("如果您現在執意加入項目，網頁將會強制重新整理，剛才編輯的所有排程與百分比將會「完全遺失」！")
+        st.markdown(f"準備新增的項目：**{item_name}**")
+        
+        c_back, c_go = st.columns(2)
+        with c_back:
+            if st.button("↩️ 放棄新增（先去右邊存檔）", use_container_width=True):
+                st.rerun()
+        with c_go:
+            if st.button("🔥 不存檔，確定直接新增", type="primary", use_container_width=True):
+                try:
+                    if data_type == "region":
+                        supabase.table("regions").insert({"name": item_name, "project_name": selected_project}).execute()
+                        st.session_state.regions.append(item_name)
+                    elif data_type == "subcontractor":
+                        supabase.table("subcontractors").insert({"name": item_name, "project_name": selected_project}).execute()
+                        st.session_state.subcontractors.append(item_name)
+                    st.success("新增成功！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"新增失敗: {e}")
+
     t_reg, t_sub = st.tabs(["區域", "廠商"])
     with t_reg:
         nr = st.text_input("新增區域名稱", key="nr_in", disabled=is_proj_closed, placeholder="輸入前請先確認任務已存檔")
         if construction_button("加入區域", key="btn_add_reg", disabled=is_proj_closed):
-            if nr and nr not in st.session_state.regions:
-                supabase.table("regions").insert({"name": nr, "project_name": selected_project}).execute()
-                st.session_state.regions.append(nr)
-                st.rerun()
+            if nr:
+                if has_unsaved_changes():
+                    confirm_add_base_data("region", nr) # 💡 攔截！跳出警告彈窗
+                elif nr not in st.session_state.regions:
+                    supabase.table("regions").insert({"name": nr, "project_name": selected_project}).execute()
+                    st.session_state.regions.append(nr)
+                    st.rerun()
         
         dr_options = st.session_state.regions if st.session_state.regions else ["(尚無資料)"]
         dr = st.selectbox("選擇刪除區域", dr_options, disabled=is_proj_closed)
@@ -207,10 +249,13 @@ with st.sidebar.expander("區域與廠商管理"):
     with t_sub:
         ns = st.text_input("新增廠商名稱", key="ns_in", disabled=is_proj_closed, placeholder="輸入前請先確認任務已存檔")
         if construction_button("加入廠商", key="btn_add_sub", disabled=is_proj_closed):
-            if ns and ns not in st.session_state.subcontractors:
-                supabase.table("subcontractors").insert({"name": ns, "project_name": selected_project}).execute()
-                st.session_state.subcontractors.append(ns)
-                st.rerun()
+            if ns:
+                if has_unsaved_changes():
+                    confirm_add_base_data("subcontractor", ns) # 💡 攔截！跳出警告彈窗
+                elif ns not in st.session_state.subcontractors:
+                    supabase.table("subcontractors").insert({"name": ns, "project_name": selected_project}).execute()
+                    st.session_state.subcontractors.append(ns)
+                    st.rerun()
                 
         ds_options = st.session_state.subcontractors if st.session_state.subcontractors else ["(尚無資料)"]
         ds = st.selectbox("選擇刪除廠商", ds_options, key="ds_sel", disabled=is_proj_closed)
@@ -243,7 +288,8 @@ with st.expander("施工任務管理", expanded=True):
             "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
             "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
         }
-        ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
+        # 💡 傳入 key 供狀態偵測
+        ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed, key=f"ed_plan_state_{selected_project}")
 
         st.subheader("2. 實際進度回報")
         col_cfg_act = {
@@ -269,9 +315,9 @@ with st.expander("施工任務管理", expanded=True):
         act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
         act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-        ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
+        # 💡 傳入 key 供狀態偵測
+        ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed, key=f"ed_act_state_{selected_project}")
 
-        # 💡 保留安全機制：復原上一次儲存
         hist_key_t = f"tasks_hist_{selected_project}"
         can_undo_t = hist_key_t in st.session_state
         
@@ -368,7 +414,8 @@ with st.expander("試車任務管理", expanded=True):
             "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
             "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
         }
-        ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed)
+        # 💡 傳入 key 供狀態偵測
+        ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed, key=f"ed_c_plan_state_{selected_project}")
 
         st.subheader("2. 實際進度回報")
         
@@ -388,7 +435,8 @@ with st.expander("試車任務管理", expanded=True):
         c_act_sync['實際開始'] = c_act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
         c_act_sync['實際完成'] = c_act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-        ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed)
+        # 💡 傳入 key 供狀態偵測
+        ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed, key=f"ed_c_act_state_{selected_project}")
 
         hist_key_c = f"comm_hist_{selected_project}"
         can_undo_c = hist_key_c in st.session_state
@@ -550,7 +598,9 @@ def draw_gantt(df, title, color_col):
                 name=leg_name, legendgroup=leg_name, showlegend=show_leg, hovertemplate=hover_text
             ))
 
-    if is_proj_closed and st.session_state.get('closed_date'):
+    is_closed = st.session_state.get('is_closed', False)
+    
+    if is_closed and st.session_state.get('closed_date'):
         closed_ts = pd.to_datetime(st.session_state.closed_date)
         fig.add_vline(x=closed_ts, line_width=2, line_dash="dash", line_color="gray", layer="above")
         fig.add_annotation(x=closed_ts, y=1, yref="paper", yanchor="bottom", text="結案日", showarrow=False, font=dict(color="gray", size=14))
@@ -713,8 +763,6 @@ with st.sidebar.expander("檔案管理"):
 # ==========================================
 # 10. 魔法變色系統 (JavaScript 強制渲染)
 # ==========================================
-import streamlit.components.v1 as components
-
 components.html(
     """
     <script>
@@ -747,9 +795,6 @@ components.html(
 # ==========================================
 # 12. 專案檔案上傳區 (支援一鍵清除與多檔案)
 # ==========================================
-import base64
-import re
-
 def encode_safe(text, is_file=False):
     prefix = re.sub(r'[^a-zA-Z0-9]', '_', text)
     prefix = re.sub(r'_+', '_', prefix).strip('_')
@@ -933,4 +978,4 @@ try:
                 st.warning("⚠️ 請先在下方勾選要刪除的檔案！")
 
 except Exception as e:
-    st.info("尚無上傳任何檔案或找不到專案資料夾。")
+    st.info("尚無上傳 any 檔案或找不到專案資料夾。")
