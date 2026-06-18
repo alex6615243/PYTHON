@@ -82,7 +82,6 @@ def has_unsaved_changes():
         if k in st.session_state:
             state = st.session_state[k]
             if isinstance(state, dict):
-                # 只要 Streamlit 偵測到編輯、新增、刪除任何一列，立刻回傳 True
                 if state.get("edited_rows") or state.get("added_rows") or state.get("deleted_rows"):
                     return True
     return False
@@ -109,7 +108,6 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
     st.divider()
     del_p = st.selectbox("選擇要刪除的專案", st.session_state.projects)
     
-    # 專案刪除防呆對話框
     @st.dialog("⚠️ 確定要刪除專案嗎？")
     def confirm_delete(project_name):
         st.error(f"即將徹底刪除【{project_name}】！\n\n包含所有任務資料、進度、日誌與檔案都將被清空。")
@@ -134,7 +132,6 @@ with st.sidebar.expander("新增與刪除專案", expanded=False):
         else:
             st.error("必須保留至少一個專案！")
 
-# 讀取結案狀態
 col_title, col_btn = st.columns([5, 1])
 
 if 'current_project' not in st.session_state or st.session_state.current_project != selected_project:
@@ -192,7 +189,7 @@ if is_proj_closed:
     st.warning("🔒 **此專案已結案！** 系統已進入唯讀模式，所有排程、日誌與檔案上傳功能皆已鎖定。")
 
 # ==========================================
-# 4. 區域與廠商管理 (側邊欄) - 智慧阻斷警告版
+# 4. 區域與廠商管理 (側邊欄)
 # ==========================================
 st.sidebar.header(f"基礎資料管理 ({selected_project})")
 with st.sidebar.expander("區域與廠商管理"):
@@ -200,7 +197,6 @@ with st.sidebar.expander("區域與廠商管理"):
     if not is_proj_closed:
         st.error("新增前請先將右側任務 **「儲存並同步」**！")
         
-    # 💡 建立基礎資料新增的二次確認對話框
     @st.dialog("⚠️ 偵測到未儲存的任務變更")
     def confirm_add_base_data(data_type, item_name):
         st.error("右側表格有「尚未儲存」的編輯內容！")
@@ -231,7 +227,7 @@ with st.sidebar.expander("區域與廠商管理"):
         if construction_button("加入區域", key="btn_add_reg", disabled=is_proj_closed):
             if nr:
                 if has_unsaved_changes():
-                    confirm_add_base_data("region", nr) # 💡 攔截！跳出警告彈窗
+                    confirm_add_base_data("region", nr)
                 elif nr not in st.session_state.regions:
                     supabase.table("regions").insert({"name": nr, "project_name": selected_project}).execute()
                     st.session_state.regions.append(nr)
@@ -251,7 +247,7 @@ with st.sidebar.expander("區域與廠商管理"):
         if construction_button("加入廠商", key="btn_add_sub", disabled=is_proj_closed):
             if ns:
                 if has_unsaved_changes():
-                    confirm_add_base_data("subcontractor", ns) # 💡 攔截！跳出警告彈窗
+                    confirm_add_base_data("subcontractor", ns)
                 elif ns not in st.session_state.subcontractors:
                     supabase.table("subcontractors").insert({"name": ns, "project_name": selected_project}).execute()
                     st.session_state.subcontractors.append(ns)
@@ -270,7 +266,7 @@ safe_regions = st.session_state.regions if st.session_state.regions else ["未�
 safe_subcontractors = st.session_state.subcontractors if st.session_state.subcontractors else ["未設定"]
 
 # ==========================================
-# 5. 施工任務管理 (復原上一步版)
+# 5. 施工任務管理
 # ==========================================
 with st.expander("施工任務管理", expanded=True):
     
@@ -288,8 +284,11 @@ with st.expander("施工任務管理", expanded=True):
             "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
             "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
         }
-        # 💡 傳入 key 供狀態偵測
-        ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed, key=f"ed_plan_state_{selected_project}")
+        ed_plan = st.data_editor(
+            st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']],
+            column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True,
+            disabled=is_proj_closed, key=f"ed_plan_state_{selected_project}"
+        )
 
         st.subheader("2. 實際進度回報")
         col_cfg_act = {
@@ -315,8 +314,10 @@ with st.expander("施工任務管理", expanded=True):
         act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
         act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-        # 💡 傳入 key 供狀態偵測
-        ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed, key=f"ed_act_state_{selected_project}")
+        ed_act = st.data_editor(
+            act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True,
+            disabled=is_proj_closed, key=f"ed_act_state_{selected_project}"
+        )
 
         hist_key_t = f"tasks_hist_{selected_project}"
         can_undo_t = hist_key_t in st.session_state
@@ -357,8 +358,13 @@ with st.expander("施工任務管理", expanded=True):
         if btn_save_t:
             with st.spinner("資料同步中..."):
                 st.session_state[hist_key_t] = st.session_state.tasks.copy() 
-                
-                new_tasks = pd.concat([ed_plan, ed_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
+
+                # ✅ BUG FIX 3: reset_index 確保兩個 DataFrame 的列順序對齊後再合併，
+                #    避免使用者在 ed_plan 刪行後 index 錯位，導致日期/百分比接到錯誤的任務。
+                ed_plan_r = ed_plan.reset_index(drop=True)
+                ed_act_r  = ed_act[['實際開始', '實際完成', '完成度(%)']].reset_index(drop=True)
+                new_tasks = pd.concat([ed_plan_r, ed_act_r], axis=1)
+
                 new_tasks['備註'] = st.session_state.tasks['備註'] if '備註' in st.session_state.tasks.columns else ""
                 new_tasks['備註'] = new_tasks['備註'].fillna("")
 
@@ -397,7 +403,7 @@ with st.expander("施工任務管理", expanded=True):
                     st.error(f"⚠️ 資料庫寫入失敗: {e}")
 
 # ==========================================
-# 6. 試車任務管理 (復原上一步版)
+# 6. 試車任務管理
 # ==========================================
 with st.expander("試車任務管理", expanded=True):
     
@@ -414,11 +420,23 @@ with st.expander("試車任務管理", expanded=True):
             "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
             "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
         }
-        # 💡 傳入 key 供狀態偵測
-        ed_c_plan = st.data_editor(st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed, key=f"ed_c_plan_state_{selected_project}")
+        ed_c_plan = st.data_editor(
+            st.session_state.comm_tasks[['區域', '試車項目', '預定開始', '預定完成', '是否為里程碑']],
+            column_config=col_cfg_c_plan, num_rows="dynamic", use_container_width=True,
+            disabled=is_proj_closed, key=f"ed_c_plan_state_{selected_project}"
+        )
 
         st.subheader("2. 實際進度回報")
-        
+
+        # ✅ BUG FIX 1: 獨立定義試車任務的欄位設定，使用 '試車項目' 而非 '施工項目'，
+        #    讓「試車項目」欄正確套用 disabled=True，避免使用者誤改項目名稱。
+        col_cfg_c_act = {
+            "試車項目": st.column_config.TextColumn("試車項目", disabled=True),
+            "實際開始": st.column_config.DateColumn("實際開工", format="MM/DD"),
+            "實際完成": st.column_config.DateColumn("實際完成", format="MM/DD"),
+            "完成度(%)": st.column_config.NumberColumn("完成度 (%)", min_value=0, max_value=100, step=10, format="%d %%")
+        }
+
         c_act_sync = st.session_state.comm_tasks[['區域', '試車項目']].copy()
 
         if not st.session_state.comm_tasks.empty:
@@ -435,8 +453,11 @@ with st.expander("試車任務管理", expanded=True):
         c_act_sync['實際開始'] = c_act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
         c_act_sync['實際完成'] = c_act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-        # 💡 傳入 key 供狀態偵測
-        ed_c_act = st.data_editor(c_act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed, key=f"ed_c_act_state_{selected_project}")
+        # ✅ BUG FIX 1 (續): 使用新定義的 col_cfg_c_act，而非施工用的 col_cfg_act
+        ed_c_act = st.data_editor(
+            c_act_sync, column_config=col_cfg_c_act, num_rows="fixed", use_container_width=True,
+            disabled=is_proj_closed, key=f"ed_c_act_state_{selected_project}"
+        )
 
         hist_key_c = f"comm_hist_{selected_project}"
         can_undo_c = hist_key_c in st.session_state
@@ -476,8 +497,12 @@ with st.expander("試車任務管理", expanded=True):
         if btn_save_c:
             with st.spinner("資料同步中..."):
                 st.session_state[hist_key_c] = st.session_state.comm_tasks.copy()
-                
-                new_c_tasks = pd.concat([ed_c_plan, ed_c_act[['實際開始', '實際完成', '完成度(%)']]], axis=1)
+
+                # ✅ BUG FIX 3 (試車版): 同施工區塊，reset_index 後再合併，防止刪行造成錯位。
+                ed_c_plan_r = ed_c_plan.reset_index(drop=True)
+                ed_c_act_r  = ed_c_act[['實際開始', '實際完成', '完成度(%)']].reset_index(drop=True)
+                new_c_tasks = pd.concat([ed_c_plan_r, ed_c_act_r], axis=1)
+
                 new_c_tasks['備註'] = st.session_state.comm_tasks['備註'] if '備註' in st.session_state.comm_tasks.columns else ""
                 new_c_tasks['備註'] = new_c_tasks['備註'].fillna("")
 
@@ -716,11 +741,23 @@ with st.sidebar.expander("檔案管理"):
         clean_snap_t = st.session_state.tasks.dropna(subset=['施工項目', '預定開始', '預定完成'])
         clean_snap_c = st.session_state.comm_tasks.dropna(subset=['試車項目', '預定開始', '預定完成'])
         snap = {"tasks": clean_snap_t.to_json(orient='records', date_format='iso'), "comm": clean_snap_c.to_json(orient='records', date_format='iso')}
-        supabase.table("tasks_backups").insert({"backup_name": f"[{selected_project}] {bn if bn else '自動備份'}", "data_json": json.dumps(snap)}).execute()
+
+        # ✅ BUG FIX 2: 存檔時寫入 project_name，讓備份與專案正確綁定。
+        # ⚠️ 注意：請確認 Supabase 的 tasks_backups 資料表已新增 project_name (text) 欄位。
+        supabase.table("tasks_backups").insert({
+            "project_name": selected_project,
+            "backup_name": f"[{selected_project}] {bn if bn else '自動備份'}",
+            "data_json": json.dumps(snap)
+        }).execute()
         st.toast("已建立")
         st.rerun()
 
-    res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name").order("backup_time", desc=True).execute()
+    # ✅ BUG FIX 2 (續): 撈取備份時加入專案過濾，避免不同專案的備份混在同一清單。
+    # ⚠️ 注意：若 tasks_backups 尚未有 project_name 欄位，此查詢會報錯，請先更新資料表結構。
+    res_b = supabase.table("tasks_backups").select("id", "backup_time", "backup_name") \
+        .eq("project_name", selected_project) \
+        .order("backup_time", desc=True).execute()
+
     if res_b.data:
         opts = {f"{i['backup_time'][5:16]} - {i['backup_name']}": i['id'] for i in res_b.data}
         sel_b = st.selectbox("選擇檔案回復", options=list(opts.keys()))
