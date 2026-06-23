@@ -630,7 +630,7 @@ with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
 
 # ==========================================
-# 8. 動態備註與每日日誌系統
+# 8. 動態備註與每日日誌系統 (支援廠商獨立分頁版)
 # ==========================================
 st.divider()
 st.subheader("施工日誌")
@@ -665,22 +665,68 @@ with c1:
     if active_tasks:
         st.info(f"**本日施工項目：** {', '.join(active_tasks)}")
 
-    existing_log = ""
+    # 💡 1. 讀取雲端的日誌資料
+    existing_log_raw = ""
     try:
         res_log = supabase.table("daily_logs").select("content").eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
         if res_log.data:
-            existing_log = res_log.data[0]['content']
+            existing_log_raw = res_log.data[0]['content']
     except Exception:
         pass
         
-    new_log = st.text_area(f"【{log_date.strftime('%Y-%m-%d')}】施工內容：", value=existing_log, height=150, key=f"txt_log_{selected_project}_{log_date}", disabled=is_proj_closed)
+    # 💡 2. 解析魔法：如果是舊版的純文字日誌，會自動歸類到「綜合」；如果是新版的 JSON，則自動拆解
+    parsed_logs = {}
+    if existing_log_raw:
+        try:
+            parsed_logs = json.loads(existing_log_raw)
+            if not isinstance(parsed_logs, dict):
+                parsed_logs = {"綜合": existing_log_raw}
+        except json.JSONDecodeError:
+            parsed_logs = {"綜合": existing_log_raw}
+
+    # 💡 3. 建立動態頁籤：包含「綜合」+「目前所有廠商」+「過去寫過日誌但已被刪除的廠商」
+    sub_list = st.session_state.subcontractors if st.session_state.subcontractors else []
+    all_keys = ["綜合"] + sub_list + list(parsed_logs.keys())
+    
+    # 移除重複的頁籤名稱，並保持順序
+    tab_names = []
+    for k in all_keys:
+        if k not in tab_names:
+            tab_names.append(k)
+
+    # 💡 4. 生成頁籤與輸入框
+    tabs = st.tabs(tab_names)
+    current_inputs = {}
+
+    for i, t_name in enumerate(tab_names):
+        with tabs[i]:
+            val = parsed_logs.get(t_name, "")
+            # 每個頁籤都有專屬的文字輸入框，並綁定唯一的 key
+            current_inputs[t_name] = st.text_area(
+                f"📝 【{t_name}】本日施工內容：", 
+                value=val, 
+                height=150, 
+                key=f"txt_log_{selected_project}_{log_date}_{t_name}", 
+                disabled=is_proj_closed
+            )
     
     if st.button("儲存施工日誌", key=f"save_t_{selected_project}", use_container_width=True, disabled=is_proj_closed):
+        # 💡 5. 儲存時自動過濾：把完全沒打字的頁籤剔除，不佔用資料庫空間
+        final_logs = {k: v.strip() for k, v in current_inputs.items() if v.strip()}
+        
         try:
             supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
-            if new_log.strip():
-                supabase.table("daily_logs").insert({"project_name": selected_project, "log_date": str(log_date), "content": new_log}).execute()
-            st.success(f"✅ {log_date} 已儲存！")
+            
+            if final_logs:
+                # 💡 將各個廠商的日誌字典，轉化為一串安全的 JSON 字串存入資料庫
+                json_str = json.dumps(final_logs, ensure_ascii=False)
+                supabase.table("daily_logs").insert({
+                    "project_name": selected_project, 
+                    "log_date": str(log_date), 
+                    "content": json_str
+                }).execute()
+                
+            st.success(f"✅ {log_date} 施工日誌已依照廠商分類同步至雲端！")
             st.rerun() 
         except Exception as e:
             st.error(f"寫入失敗: {e}")
@@ -698,11 +744,9 @@ with c2:
                 st.session_state.comm_tasks.loc[st.session_state.comm_tasks['試車項目'] == sel_c, '備註'] = new_note_c
                 try:
                     supabase.table("commissioning_tasks").update({"remarks": new_note_c}).eq("test_item", sel_c).eq("project_name", selected_project).execute()
-                    st.success("✅ 已儲存！")
+                    st.success("✅ 試車備註已同步至雲端！")
                 except Exception as e: st.error(f"備註寫入失敗: {e}")
     else: st.info("尚無試車項目可供填寫備註。")
-
-# ==========================================
 # 9. 檔案備份與管理
 # ==========================================
 st.sidebar.divider()
