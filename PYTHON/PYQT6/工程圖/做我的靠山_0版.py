@@ -283,6 +283,7 @@ with st.expander("施工任務管理", expanded=True):
             "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
             "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
         }
+        # 💡 傳入 key 供狀態偵測
         ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed, key=f"ed_plan_state_{selected_project}")
 
         st.subheader("2. 實際進度回報")
@@ -306,9 +307,12 @@ with st.expander("施工任務管理", expanded=True):
 
         act_sync = act_sync[['施工項目', '實際開始', '實際完成', '完成度(%)']]
         act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
-        act_sync['实际開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
+        
+        # 💡 已修正錯字：改回「實際開始」
+        act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
         act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
+        # 💡 傳入 key 供狀態偵測
         ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed, key=f"ed_act_state_{selected_project}")
 
         hist_key_t = f"tasks_hist_{selected_project}"
