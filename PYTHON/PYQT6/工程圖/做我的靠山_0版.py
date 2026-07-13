@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -204,7 +204,7 @@ with st.sidebar.expander("區域與廠商管理"):
         
         c_back, c_go = st.columns(2)
         with c_back:
-            if st.button("↩️ 放記新增（先去右邊存檔）", use_container_width=True):
+            if st.button("↩️ 放棄新增（先去右邊存檔）", use_container_width=True):
                 st.rerun()
         with c_go:
             if st.button("🔥 不存檔，確定直接新增", type="primary", use_container_width=True):
@@ -265,7 +265,7 @@ safe_regions = st.session_state.regions if st.session_state.regions else ["未�
 safe_subcontractors = st.session_state.subcontractors if st.session_state.subcontractors else ["未設定"]
 
 # ==========================================
-# 5. 施工任務管理 (復原上一步版)
+# 5. 施工任務管理 (完美修正無幽靈欄位版)
 # ==========================================
 with st.expander("施工任務管理", expanded=True):
     
@@ -278,12 +278,11 @@ with st.expander("施工任務管理", expanded=True):
         col_cfg_plan = {
             "區域": st.column_config.SelectboxColumn("區域", options=safe_regions, required=True),
             "施工項目": st.column_config.TextColumn("施工項目", required=True),
-            "施工廠商": st.column_config.SelectboxColumn("施工廠商", options=safe_subcontractors, required=True),
+            "施工廠商": st.column_config.TextColumn("施工廠商 (複選請用逗號 , 分隔)", help="若有多個廠商，請使用半形逗號分隔，例如：廠商A, 廠商B", required=True),
             "預定開始": st.column_config.DateColumn("預定開始", format="MM/DD", required=True),
             "預定完成": st.column_config.DateColumn("預定完成", format="MM/DD", required=True),
             "是否為里程碑": st.column_config.CheckboxColumn("里程碑", default=False)
         }
-        # 💡 傳入 key 供狀態偵測
         ed_plan = st.data_editor(st.session_state.tasks[['區域', '施工項目', '施工廠商', '預定開始', '預定完成', '是否為里程碑']], column_config=col_cfg_plan, num_rows="dynamic", use_container_width=True, disabled=is_proj_closed, key=f"ed_plan_state_{selected_project}")
 
         st.subheader("2. 實際進度回報")
@@ -305,14 +304,13 @@ with st.expander("施工任務管理", expanded=True):
             act_sync['實際完成'] = None
             act_sync['完成度(%)'] = 0
 
+        # 精準切回 4 欄，完全排除幽靈欄位
         act_sync = act_sync[['施工項目', '實際開始', '實際完成', '完成度(%)']]
         act_sync['完成度(%)'] = act_sync['完成度(%)'].fillna(0).astype(int)
         
-        # 💡 已修正錯字：改回「實際開始」
         act_sync['實際開始'] = act_sync['實際開始'].apply(lambda x: x if pd.notnull(x) else None)
         act_sync['實際完成'] = act_sync['實際完成'].apply(lambda x: x if pd.notnull(x) else None)
 
-        # 💡 傳入 key 供狀態偵測
         ed_act = st.data_editor(act_sync, column_config=col_cfg_act, num_rows="fixed", use_container_width=True, disabled=is_proj_closed, key=f"ed_act_state_{selected_project}")
 
         hist_key_t = f"tasks_hist_{selected_project}"
@@ -617,27 +615,51 @@ def draw_gantt(df, title, color_col):
 
 with tab_g1:
     v_mode = st.radio("分類維度：", ["區域", "施工廠商"], horizontal=True, key="mode_const")
-    draw_gantt(st.session_state.tasks, f"{selected_project} - 施工圖", v_mode)
+    
+    plot_df = st.session_state.tasks.copy()
+    all_vendors = set()
+    if not plot_df.empty:
+        for v in plot_df['施工廠商'].dropna():
+            for sub_v in str(v).replace('，', ',').split(','):
+                if sub_v.strip(): all_vendors.add(sub_v.strip())
+                
+    selected_vendors = st.multiselect("🔍 篩選顯示特定廠商 (留空代表顯示全部)：", list(all_vendors), key=f"v_filter_{selected_project}")
+    
+    if selected_vendors:
+        def check_vendor(task_vendors_str):
+            if not task_vendors_str: return False
+            task_v_list = [v.strip() for v in str(task_vendors_str).replace('，', ',').split(',')]
+            return any(v in task_v_list for v in selected_vendors)
+        plot_df = plot_df[plot_df['施工廠商'].apply(check_vendor)]
+
+    draw_gantt(plot_df, f"{selected_project} - 施工圖", v_mode)
 
 with tab_g2:
     draw_gantt(st.session_state.comm_tasks, f"{selected_project} - 試車圖", "區域")
 
 # ==========================================
-# 8. 動態備註與每日日誌系統 (支援廠商分頁與日期跳轉版)
+# 8. 動態備註與每日日誌系統 (型態防禦與安全淨化版)
 # ==========================================
 st.divider()
 st.subheader("施工日誌")
 c1, c2 = st.columns([1, 1])
 
+# 💡 安全機制 1：全自動強轉日期型態函數，阻斷任何與資料庫的比對錯誤
+def to_safe_date(d):
+    if pd.isnull(d) or d == "": return None
+    if isinstance(d, datetime.date): return d
+    try:
+        return pd.to_datetime(d).date()
+    except:
+        return None
+
 with c1:
     st.markdown("##### 每日施工日誌")
     
-    # 💡 魔法 1：定義全域日期狀態鑰匙，讓元件 key 直接綁定狀態
     date_state_key = f"current_date_{selected_project}"
     if date_state_key not in st.session_state:
         st.session_state[date_state_key] = datetime.date.today()
     
-    # 抓取有紀錄日誌的完整日期陣列
     raw_dates = []
     try:
         res_logged = supabase.table("daily_logs").select("log_date").eq("project_name", selected_project).order("log_date").execute()
@@ -646,38 +668,34 @@ with c1:
     except Exception:
         pass
 
-    # 💡 魔法 2：將原本的純文字標籤，重構為「具有點擊跳轉功能」的實體按鈕
     if raw_dates:
         st.markdown("**快速跳轉出工日期：**")
         cols_date = st.columns(len(raw_dates) if len(raw_dates) < 8 else 8)
         for idx, date_str in enumerate(raw_dates):
             c_target = cols_date[idx % 8]
-            d_obj = pd.to_datetime(date_str).date()
-            display_str = d_obj.strftime('%m/%d')
-            
-            # 當前選取的日期會變換顏色加亮標示 (primary)
-            btn_type = "primary" if d_obj == st.session_state[date_state_key] else "secondary"
-            
-            with c_target:
-                if st.button(display_str, key=f"btn_jump_{selected_project}_{date_str}", type=btn_type, use_container_width=True):
-                    # 點擊後重寫狀態鑰匙，並重新整理
-                    st.session_state[date_state_key] = d_obj
-                    st.rerun()
-        st.write("") # 排版留空
+            d_obj = to_safe_date(date_str)
+            if d_obj:
+                display_str = d_obj.strftime('%m/%d')
+                btn_type = "primary" if d_obj == st.session_state[date_state_key] else "secondary"
+                with c_target:
+                    if st.button(display_str, key=f"btn_jump_{selected_project}_{date_str}", type=btn_type, use_container_width=True):
+                        st.session_state[date_state_key] = d_obj
+                        st.rerun()
+        st.write("") 
 
-    # 💡 日期選擇器直接綁定狀態鑰匙，免除衝突
     log_date = st.date_input("選擇日期：", key=date_state_key)
+    safe_log_date = to_safe_date(log_date)
 
     active_tasks = []
-    if not st.session_state.tasks.empty:
+    if not st.session_state.tasks.empty and safe_log_date:
         for _, r in st.session_state.tasks.iterrows():
-            start = r['實際開始'] if pd.notnull(r['實際開始']) else r['預定開始']
-            end = r['實際完成'] if pd.notnull(r['實際完成']) else r['預定完成']
+            start = to_safe_date(r['實際開始'] if pd.notnull(r['實際開始']) else r['預定開始'])
+            end = to_safe_date(r['實際完成'] if pd.notnull(r['實際完成']) else r['預定完成'])
             
-            if pd.notnull(start) and pd.notnull(end):
-                if start <= log_date <= end:
+            if start and end:
+                if start <= safe_log_date <= end:
                     active_tasks.append(str(r['施工項目']))
-            elif pd.notnull(start) and start == log_date: 
+            elif start and start == safe_log_date: 
                 active_tasks.append(str(r['施工項目']))
 
     if active_tasks:
@@ -685,7 +703,7 @@ with c1:
 
     existing_log_raw = ""
     try:
-        res_log = supabase.table("daily_logs").select("content").eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
+        res_log = supabase.table("daily_logs").select("content").eq("project_name", selected_project).eq("log_date", str(safe_log_date)).execute()
         if res_log.data:
             existing_log_raw = res_log.data[0]['content']
     except Exception:
@@ -701,12 +719,22 @@ with c1:
             parsed_logs = {"綜合": existing_log_raw}
 
     sub_list = st.session_state.subcontractors if st.session_state.subcontractors else []
-    all_keys = ["綜合"] + sub_list + list(parsed_logs.keys())
     
+    # 💡 將複選逗號拆開為獨立廠商，擴充為動態日誌頁籤
+    expanded_subs = []
+    if not st.session_state.tasks.empty:
+        for v_str in st.session_state.tasks['施工廠商'].dropna():
+            for v in str(v_str).replace('，', ',').split(','):
+                if v.strip() and v.strip() not in expanded_subs:
+                    expanded_subs.append(v.strip())
+                    
+    all_keys = ["綜合"] + expanded_subs + sub_list + list(parsed_logs.keys())
+    
+    # 💡 安全機制 2：全面淨化頁籤，濾除空值、重複值及無效型態，徹底防範 st.tabs 崩潰
     tab_names = []
     for k in all_keys:
-        if k not in tab_names:
-            tab_names.append(k)
+        if k and str(k).strip() and str(k).strip() not in tab_names:
+            tab_names.append(str(k).strip())
 
     tabs = st.tabs(tab_names)
     current_inputs = {}
@@ -718,7 +746,7 @@ with c1:
                 f"📝 【{t_name}】本日施工內容：", 
                 value=val, 
                 height=150, 
-                key=f"txt_log_{selected_project}_{log_date}_{t_name}", 
+                key=f"txt_log_{selected_project}_{safe_log_date}_{t_name}", 
                 disabled=is_proj_closed
             )
     
@@ -726,17 +754,17 @@ with c1:
         final_logs = {k: v.strip() for k, v in current_inputs.items() if v.strip()}
         
         try:
-            supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(log_date)).execute()
+            supabase.table("daily_logs").delete().eq("project_name", selected_project).eq("log_date", str(safe_log_date)).execute()
             
             if final_logs:
                 json_str = json.dumps(final_logs, ensure_ascii=False)
                 supabase.table("daily_logs").insert({
                     "project_name": selected_project, 
-                    "log_date": str(log_date), 
+                    "log_date": str(safe_log_date), 
                     "content": json_str
                 }).execute()
                 
-            st.success(f"✅ {log_date} 施工日誌已依照廠商分類同步至雲端！")
+            st.success(f"✅ {safe_log_date} 施工日誌已依照廠商分類同步至雲端！")
             st.rerun() 
         except Exception as e:
             st.error(f"寫入失敗: {e}")
@@ -792,7 +820,7 @@ with st.sidebar.expander("檔案管理"):
                     for _, r in df_t.iterrows():
                         c_val = r.get('完成度(%)', 0)
                         c_int = 0 if pd.isna(c_val) or c_val == "" else int(float(c_val))
-                        up_t.append({"project_name": selected_project, "task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r['實際開始']), "actual_end": safe_date(r['實際完成']), "completion": c_int, "remarks": r.get('備註', '')})
+                        up_t.append({"project_name": selected_project, "task_name": r['施工項目'], "subcontractor": r['施工廠商'], "start_date": safe_date(r['預定開始']), "end_date": safe_date(r['預定完成']), "region": r['區域'], "is_milestone": bool(r.get('是否為里程碑', False)), "actual_start": safe_date(r.get('實際開始')), "actual_end": safe_date(r.get('實際完成')), "completion": c_int, "remarks": r.get('備註', '')})
                     
                     supabase.table("tasks").delete().eq("project_name", selected_project).execute()
                     if up_t: supabase.table("tasks").insert(up_t).execute()
@@ -1034,4 +1062,4 @@ try:
                 st.warning("⚠️ 請先在下方勾選要刪除的檔案！")
 
 except Exception as e:
-    st.info("尚無上傳 any 檔案或找不到專案資料夾。")
+    st.info("尚無上傳任何檔案或找不到專案資料夾。")
